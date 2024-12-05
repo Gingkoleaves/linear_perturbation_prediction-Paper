@@ -3,6 +3,26 @@
     "Version": "4.4.1",
     "Repositories": [
       {
+        "Name": "BioCsoft",
+        "URL": "https://bioconductor.org/packages/3.19/bioc"
+      },
+      {
+        "Name": "BioCann",
+        "URL": "https://bioconductor.org/packages/3.19/data/annotation"
+      },
+      {
+        "Name": "BioCexp",
+        "URL": "https://bioconductor.org/packages/3.19/data/experiment"
+      },
+      {
+        "Name": "BioCworkflows",
+        "URL": "https://bioconductor.org/packages/3.19/workflows"
+      },
+      {
+        "Name": "BioCbooks",
+        "URL": "https://bioconductor.org/packages/3.19/books"
+      },
+      {
         "Name": "CRAN",
         "URL": "https://cloud.r-project.org"
       }
@@ -22,8 +42,8 @@
     "Biobase": {
       "Package": "Biobase",
       "Version": "2.64.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "R",
@@ -35,8 +55,8 @@
     "BiocGenerics": {
       "Package": "BiocGenerics",
       "Version": "0.50.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "R",
         "graphics",
@@ -49,8 +69,8 @@
     "BiocIO": {
       "Package": "BiocIO",
       "Version": "1.14.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "R",
@@ -73,8 +93,8 @@
     "BiocNeighbors": {
       "Package": "BiocNeighbors",
       "Version": "1.22.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocParallel",
         "Matrix",
@@ -89,8 +109,8 @@
     "BiocParallel": {
       "Package": "BiocParallel",
       "Version": "1.38.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BH",
         "R",
@@ -108,8 +128,8 @@
     "BiocVersion": {
       "Package": "BiocVersion",
       "Version": "3.19.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "R"
       ],
@@ -118,8 +138,8 @@
     "Biostrings": {
       "Package": "Biostrings",
       "Version": "2.72.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "GenomeInfoDb",
@@ -150,8 +170,8 @@
     "ComplexHeatmap": {
       "Package": "ComplexHeatmap",
       "Version": "2.20.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "GetoptLong",
         "GlobalOptions",
@@ -189,8 +209,8 @@
     "DelayedArray": {
       "Package": "DelayedArray",
       "Version": "0.30.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "IRanges",
@@ -209,8 +229,8 @@
     "DelayedMatrixStats": {
       "Package": "DelayedMatrixStats",
       "Version": "1.26.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "DelayedArray",
         "IRanges",
@@ -225,8 +245,8 @@
     "GenomeInfoDb": {
       "Package": "GenomeInfoDb",
       "Version": "1.40.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "GenomeInfoDbData",
@@ -244,8 +264,7 @@
     "GenomeInfoDbData": {
       "Package": "GenomeInfoDbData",
       "Version": "1.2.12",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/data/annotation",
+      "Source": "Bioconductor",
       "Requirements": [
         "R"
       ],
@@ -254,8 +273,8 @@
     "GenomicAlignments": {
       "Package": "GenomicAlignments",
       "Version": "1.40.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "BiocParallel",
@@ -276,8 +295,8 @@
     "GenomicRanges": {
       "Package": "GenomicRanges",
       "Version": "1.56.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "GenomeInfoDb",
@@ -321,8 +340,8 @@
     "HDF5Array": {
       "Package": "HDF5Array",
       "Version": "1.32.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "DelayedArray",
@@ -344,8 +363,8 @@
     "IRanges": {
       "Package": "IRanges",
       "Version": "2.38.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "R",
@@ -392,8 +411,8 @@
     "MatrixGenerics": {
       "Package": "MatrixGenerics",
       "Version": "1.16.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "matrixStats",
         "methods"
@@ -478,8 +497,8 @@
     "Rhdf5lib": {
       "Package": "Rhdf5lib",
       "Version": "1.26.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "R"
       ],
@@ -495,8 +514,8 @@
     "Rhtslib": {
       "Package": "Rhtslib",
       "Version": "3.0.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "tools",
         "zlibbioc"
@@ -506,8 +525,8 @@
     "Rsamtools": {
       "Package": "Rsamtools",
       "Version": "2.20.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "BiocParallel",
@@ -530,8 +549,8 @@
     "S4Arrays": {
       "Package": "S4Arrays",
       "Version": "1.4.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "IRanges",
@@ -548,8 +567,8 @@
     "S4Vectors": {
       "Package": "S4Vectors",
       "Version": "0.42.1",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "R",
@@ -563,8 +582,8 @@
     "SingleCellExperiment": {
       "Package": "SingleCellExperiment",
       "Version": "1.26.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "DelayedArray",
@@ -580,8 +599,8 @@
     "SparseArray": {
       "Package": "SparseArray",
       "Version": "1.4.8",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "IRanges",
@@ -601,8 +620,8 @@
     "SummarizedExperiment": {
       "Package": "SummarizedExperiment",
       "Version": "1.34.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "Biobase",
         "BiocGenerics",
@@ -625,8 +644,8 @@
     "UCSC.utils": {
       "Package": "UCSC.utils",
       "Version": "1.0.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "S4Vectors",
         "httr",
@@ -651,8 +670,8 @@
     "XVector": {
       "Package": "XVector",
       "Version": "0.44.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "IRanges",
@@ -720,8 +739,8 @@
     "beachmat": {
       "Package": "beachmat",
       "Version": "2.20.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "DelayedArray",
@@ -744,24 +763,6 @@
         "utils"
       ],
       "Hash": "0f4e9d8caa6feaa7e409ae6c30f2ca66"
-    },
-    "bench": {
-      "Package": "bench",
-      "Version": "1.1.3",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "glue",
-        "methods",
-        "pillar",
-        "profmem",
-        "rlang",
-        "stats",
-        "tibble",
-        "utils"
-      ],
-      "Hash": "d3920bdeb09b0dd8562c5ca24da562b7"
     },
     "bit": {
       "Package": "bit",
@@ -1333,6 +1334,24 @@
       ],
       "Hash": "899f28fe0388b7f687d7453429c2474d"
     },
+    "ggh4x": {
+      "Package": "ggh4x",
+      "Version": "0.2.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "cli",
+        "ggplot2",
+        "grid",
+        "gtable",
+        "lifecycle",
+        "rlang",
+        "scales",
+        "stats",
+        "vctrs"
+      ],
+      "Hash": "012d7705b4cdc7b5ee89895aeefc1d45"
+    },
     "ggplot2": {
       "Package": "ggplot2",
       "Version": "3.5.1",
@@ -1393,8 +1412,8 @@
     "glmGamPoi": {
       "Package": "glmGamPoi",
       "Version": "1.16.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "DelayedArray",
@@ -1727,8 +1746,8 @@
     "lemur": {
       "Package": "lemur",
       "Version": "1.2.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "BiocNeighbors",
@@ -1771,8 +1790,8 @@
     "limma": {
       "Package": "limma",
       "Version": "3.60.4",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "R",
         "grDevices",
@@ -1920,23 +1939,6 @@
       ],
       "Hash": "2bcca3848e4734eb3b16103bc9aa4b8e"
     },
-    "pheatmap": {
-      "Package": "pheatmap",
-      "Version": "1.0.12",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "RColorBrewer",
-        "grDevices",
-        "graphics",
-        "grid",
-        "gtable",
-        "scales",
-        "stats"
-      ],
-      "Hash": "db1fb0021811b6693741325bbe916e58"
-    },
     "pillar": {
       "Package": "pillar",
       "Version": "1.9.0",
@@ -1967,8 +1969,8 @@
     "plotgardener": {
       "Package": "plotgardener",
       "Version": "1.10.2",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "GenomeInfoDb",
         "GenomicRanges",
@@ -1997,8 +1999,8 @@
     "plyranges": {
       "Package": "plyranges",
       "Version": "1.24.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "GenomeInfoDb",
@@ -2050,16 +2052,6 @@
         "utils"
       ],
       "Hash": "0c90a7d71988856bad2a2a45dd871bb9"
-    },
-    "profmem": {
-      "Package": "profmem",
-      "Version": "0.6.0",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "utils"
-      ],
-      "Hash": "4974ce1d5ab22f266af90826f295f6c7"
     },
     "progress": {
       "Package": "progress",
@@ -2228,8 +2220,8 @@
     "rhdf5": {
       "Package": "rhdf5",
       "Version": "2.48.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "R",
         "Rhdf5lib",
@@ -2241,8 +2233,8 @@
     "rhdf5filters": {
       "Package": "rhdf5filters",
       "Version": "1.16.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "Rhdf5lib"
       ],
@@ -2302,8 +2294,8 @@
     "rtracklayer": {
       "Package": "rtracklayer",
       "Version": "1.64.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BiocGenerics",
         "BiocIO",
@@ -2435,8 +2427,8 @@
     "sparseMatrixStats": {
       "Package": "sparseMatrixStats",
       "Version": "1.16.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "Matrix",
         "MatrixGenerics",
@@ -2833,8 +2825,8 @@
     "zlibbioc": {
       "Package": "zlibbioc",
       "Version": "1.50.0",
-      "Source": "Repository",
-      "Repository": "https://bioconductor.org/packages/3.19/bioc",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Hash": "3db02e3c460e1c852365df117a2b441b"
     },
     "zoo": {
