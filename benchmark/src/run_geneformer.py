@@ -122,6 +122,9 @@ def tokenize_adata(adata, output_dir = None):
 ctrl_adata_tok = tokenize_adata(ctrl_adata)
 train_adata_tok = tokenize_adata(new_adata)
 
+# Important that the date is determined here as the training can take multiple days
+today_date = datetime.now().strftime('%y%m%d')
+
 # Classification (i.e., pretraining)
 cc = Classifier(classifier="cell",
                 cell_state_dict = {"state_key": "condition", "states": "all"},
@@ -140,7 +143,6 @@ all_metrics = cc.validate(model_directory=GENEFORMER_MODEL_LOCATION,
                           output_directory=trained_model_dir,
                           output_prefix="classification_result")
 
-today_date = datetime.now().strftime('%y%m%d')
 trained_model_location = f"{trained_model_dir}/{today_date}_geneformer_cellClassifier_classification_result/ksplit1"
 
 
