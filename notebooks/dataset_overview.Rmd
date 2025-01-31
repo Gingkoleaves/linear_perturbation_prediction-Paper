@@ -1,0 +1,183 @@
+---
+title: "R Notebook"
+---
+
+
+```{r}
+library(tidyverse)
+library(glue)
+source("util.R")
+```
+
+```{r}
+dataset_labels <- c("norman_from_scfoundation" = "Norman", "replogle_k562_essential" = "Replogle K562", "replogle_rpe1_essential" = "Replogle RPE1", "adamson" = "Adamson")
+```
+
+
+```{r, paged.print=FALSE}
+norman_data <- bind_rows(readRDS("../benchmark/output/double_perturbation_results_predictions.RDS")) |>
+  filter(name == "norman_from_scfoundation-1-ground_truth")
+
+pert_res <-  bind_rows(readRDS("../benchmark/output/single_perturbation_results_predictions.RDS"))
+```
+
+
+```{r, paged.print=FALSE}
+dat <- pert_res |>
+  filter(name %in% c("adamson-1-ground_truth", "replogle_rpe1_essential-1-ground_truth", "replogle_k562_essential-1-ground_truth")) |>
+  bind_rows(norman_data) |>
+  mutate(perturbation_split = str_split(perturbation, pattern = "[+_]", n = 2)) %>%
+  mutate(perturbation_split = map(perturbation_split, \(x) {
+    if(all(x == "ctrl" | x == "")) "ctrl" 
+    else if(length(x) == 2) x
+    else c(x, "ctrl")
+  })) %>%
+  mutate(perturbation = map_chr(perturbation_split, paste0, collapse = "+")) %>%
+  separate(name, sep = "-", into = c("dataset", "seed", NA), convert = TRUE) |>
+  mutate(gene_name = map(prediction, \(x) names(x))) |>
+  mutate(dataset = factor(dataset, names(dataset_labels)))
+
+dat
+```
+
+
+
+```{r, paged.print=FALSE}
+baselines <- dat %>%
+  filter(perturbation == "ctrl") %>%
+  unnest(c(gene_name, prediction, prediction_std))
+```
+
+
+```{r, paged.print=FALSE}
+target_gene_expr <- dat |>
+  unnest(c(gene_name, prediction, prediction_std)) |>
+  unnest(perturbation_split) |>
+  filter(perturbation_split == gene_name)
+
+target_gene_change_plots <- target_gene_expr |>
+  left_join(baselines |> dplyr::select(dataset, baseline = prediction, baseline_std = prediction_std, gene_name), by = c("dataset", "gene_name")) |>
+  summarize(.by = c(gene_name, dataset), prediction = mean(prediction), baseline = mean(baseline)) |>
+  group_by(dataset) |>
+  group_map(\(data, key){
+    data |>
+      mutate(gene_name = fct_reorder(gene_name, baseline - prediction)) |>
+      mutate(up = factor(ifelse(baseline < prediction, "up", "down"), levels=c("up", "down"))) |>
+      ggplot() +
+        geom_segment(aes(x = baseline, xend = prediction, y = gene_name, color = up),
+                     arrow = grid::arrow(length = unit(1, "mm"), ends = "last", type = "closed"),
+                     linewidth = 0.3) +
+        scale_x_continuous(limits = c(0, 5), expand = expansion(add = c(0, 0.3))) +
+        scale_color_discrete(drop = FALSE) +
+        theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+        guides(color = "none") +
+        labs(subtitle = dataset_labels[key[[1]]], x = "Gene Expression", 
+             y = "Perturbation Target Gene")
+  })
+```
+
+
+
+```{r, paged.print=FALSE}
+set.seed(1)
+
+pca_mats <- dat |>
+  dplyr::select(dataset, perturbation, prediction) |>
+  group_by(dataset) |>
+  group_map(\(data, key){
+    mat <- t(do.call(rbind, data$prediction))
+    res <- lemur:::pca(mat, n = 20)$embedding
+    colnames(res) <- data$perturbation
+    res
+  })
+
+set.seed(1)
+umaps <- lapply(pca_mats, \(x) uwot::umap(t(x)))
+set.seed(1)
+clustering <- lapply(pca_mats, \(x){
+  bluster::clusterRows(t(x), BLUSPARAM = bluster::SNNGraphParam(k = 20, cluster.fun = "louvain", BNPARAM = BiocNeighbors::AnnoyParam() ))
+})
+
+
+
+n_genes_per_cluster <- clustering |> map(\(x){
+  enframe(as.vector(table(x)), name = "cluster", value = "n") |>
+    mutate(ngenes = round(8 * n / sum(n)))
+}) |>
+  magrittr::set_names(names(dataset_labels)) |>
+  bind_rows(.id = "dataset") |>
+  mutate(dataset = factor(dataset, names(dataset_labels)),
+         cluster = as.factor(cluster))
+  
+set.seed(1)
+dataset_umaps <- tibble(dataset = names(dataset_labels), 
+       umap = umaps, 
+       pert = map(pca_mats, colnames),
+       cluster = clustering) |>
+  mutate(dataset = factor(dataset, levels = names(dataset_labels))) |>
+  unnest(c(umap, pert, cluster)) |>
+  left_join(n_genes_per_cluster, by = c("dataset", "cluster")) |>
+  # mutate(center = matrix(colMeans(umap), nrow = 1), .by = c(dataset, cluster)) |>
+  # mutate(sel = rank(rowSums((umap - center)^2)) <= ngenes, .by = c(dataset, cluster)) |>
+  mutate(sel = rank(runif(n())) <= ngenes, .by = c(dataset, cluster)) |>
+  mutate(label = ifelse(sel, pert, "")) |>
+  mutate(label = label |> str_remove("\\+?ctrl\\+?")) |>
+  mutate(point_label = case_when(
+    pert == "ctrl" ~ "No Perturbation",
+    str_detect(pert, "ctrl") ~ "Single Perturbation",
+    ! str_detect(pert, "ctrl") ~ "Double Perturbation",
+    .default = "Other"
+  )) |>
+  mutate(point_label = factor(point_label, c("No Perturbation", "Single Perturbation", "Double Perturbation"))) |>
+  ggplot(aes(x = umap[,1], y = umap[,2])) +
+    ggrastr::rasterize(geom_point(aes(color = point_label), size = 0.7, stroke = 0), dpi = 500) +
+    geom_point(data = . %>% filter(pert == "ctrl"), aes(color = point_label), size = 1.5, stroke = 0) +
+    ggrepel::geom_text_repel( aes(label = label), max.overlaps = Inf, size = font_size_tiny / .pt,
+                            min.segment.length = 0, bg.color = "white", color = "black") +
+    facet_wrap(vars(dataset), labeller = as_labeller(dataset_labels), nrow = 1) +
+    coord_fixed() +
+    labs(color = "", x = "UMAP 1", y = "UMAP 2") +
+    theme(legend.position = "bottom")
+
+dataset_umaps
+```
+
+
+```{r}
+dataset_table <- str_trim(r"(
+\begin{minipage}{\textwidth}
+\begin{tabular}{p{5cm} p{3.6cm}p{6.5cm}}
+	Dataset & Size (Genes $\times$ Cells) & Perturbations\\
+	\hline
+	Norman (K562) & $19\,264\times 84\,143$ & $124$ double and $100$ single perturbations\\
+	Replogle (K562) & $5\,000 \times 162\,264$ & $1\,088$ single perturbations \\
+	Replogle (RPE1) & $5\,000 \times 161\,423$ & $1\,535$ single perturbations \\
+	Adamson (K562) & $5\,060 \times 65\,899$ & $81$ single perturbations\\
+	\hline\hline\\
+\end{tabular}
+\end{minipage}
+)")
+```
+
+
+
+```{r}
+plot_assemble(
+  add_text("(A) Table: Dataset overview", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text(str_replace_all(dataset_table, "\n", " "), x = 2.7, y = 16, fontsize = font_size, vjust = 1, hjust = 0),
+  
+  add_text("(B) UMAP of the datasets", x = 2.7, y = 35, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(dataset_umaps, x = 0, y = 37, width = 160, height = 60),
+
+  add_text("(C) Change of perturbation target gene expression", x = 2.7, y = 100, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(target_gene_change_plots[[1]], x = 2.5, y = 103, width = 40, height = 80),
+  add_plot(target_gene_change_plots[[2]], x = 42.5, y = 103, width = 40, height = 80),
+  add_plot(target_gene_change_plots[[3]], x = 82.5, y = 103, width = 40, height = 80),
+  add_plot(target_gene_change_plots[[4]], x = 122.5, y = 103, width = 40, height = 80),
+
+  width = 180, height = 185, units = "mm", show_grid_lines = FALSE,
+  latex_support = TRUE, filename = "../plots/suppl-dataset_overview.pdf"
+)
+```
+
+

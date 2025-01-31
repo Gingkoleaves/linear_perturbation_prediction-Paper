@@ -24,8 +24,13 @@ options(tikzDocumentDeclaration = union(
     r"(\usepackage{helvet})",   # Use sans serif font Helvetica
     r"(\newcommand{\matr}[1]{\mathbf{#1}})",
     r"(\usepackage{xcolor})",
+    r"(\usepackage{fontawesome})",
     r"(\definecolor{ggplotRed}{rgb}{0.97255,0.46275,0.42745})",
     r"(\definecolor{ggplotBlue}{rgb}{0,0.74902,0.76863})",
+    r"(\definecolor{baseROrange}{HTML}{ffa500})",
+    r"(\definecolor{nonAdditiveOrange}{HTML}{fdc086})",
+    r"(\definecolor{nonAdditivePurple}{HTML}{beaed4})",
+    r"(\definecolor{nonAdditiveGrey}{HTML}{d3d3d3})",
     r"(\definecolor{colorbrewerDarkOrange}{HTML}{d95f02})",
     r"(\definecolor{colorbrewerDarkPurple}{HTML}{7570b3})"
   ))

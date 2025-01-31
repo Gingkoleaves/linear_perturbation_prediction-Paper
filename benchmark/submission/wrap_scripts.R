@@ -7,16 +7,48 @@ prepare_perturbation_data <- function(params, duration = "01:00:00", memory = "4
                                  extra_args = "gears_env2", duration = duration, memory = memory)
 }
 
+geneformer_prediction <- function(params, dep_jobs, duration = "50:00:00", memory = "120GB"){
+  MyWorkflowManager::wrap_script("src/run_geneformer.py", params = params, 
+                                 dependencies = dep_jobs, executor = "python", 
+                                 extra_args = "geneformer_env",
+                                 extra_slurm_arg = "--constraint=\"[gpu=H100|gpu=Mi210]\" -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
+
+uce_prediction <- function(params, dep_jobs, duration = "30:00:00", memory = "120GB"){
+  MyWorkflowManager::wrap_script("src/run_uce.py", params = params, 
+                                 dependencies = dep_jobs, executor = "python", 
+                                 extra_args = "uce_env",
+                                 extra_slurm_arg = "--constraint=\"[gpu=A40|gpu=L40s|gpu=H100|gpu=A100]\" -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
+
+scbert_prediction <- function(params, dep_jobs, duration = "30:00:00", memory = "120GB"){
+  MyWorkflowManager::wrap_script("src/run_scbert.py", params = params, 
+                                 dependencies = dep_jobs, executor = "python", 
+                                 extra_args = "scbert_env",
+                                 extra_slurm_arg = "-C gaming  -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
+
+
+cpa_prediction <- function(params, dep_jobs, duration = "16:00:00", memory = "120GB"){
+  MyWorkflowManager::wrap_script("src/run_cpa.py", params = params, 
+                                 dependencies = dep_jobs, executor = "python", 
+                                 extra_args = "cpa_env3",
+                                 extra_slurm_arg = "-C gaming -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
 
 scgpt_combinatorial_prediction <- function(params, dep_jobs, duration = "10:00:00", memory = "40GB"){
   MyWorkflowManager::wrap_script("src/run_scgpt.py", params = params, 
                                  dependencies = dep_jobs, executor = "python", 
                                  extra_args = "flashattn_env",
-                                 extra_slurm_arg = "-C gaming  -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 extra_slurm_arg = "--constraint=\"[gpu=A40|gpu=L40s|gpu=H100|gpu=A100]\" -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
                                  duration = duration, memory = memory)
 }
 
-scgpt_extract_embedding <- function( duration = "00:30:00", memory = "40GB"){
+scgpt_extract_embedding <- function(duration = "00:30:00", memory = "40GB"){
   params <- list()
   names(params) <- character(0L)
   MyWorkflowManager::wrap_script("src/extract_gene_embedding_scgpt.py", params = params,
@@ -77,6 +109,12 @@ ground_truth_combinatorial_prediction <- function(params, dep_jobs, duration = "
                                  duration = duration, memory = memory)
 }
 
+
+mean_prediction <- function(params, dep_jobs, duration = "03:00:00", memory = "60GB"){
+  MyWorkflowManager::wrap_script("src/run_mean_prediction.R", params = params, 
+                                 dependencies = dep_jobs, executor = "R", 
+                                 duration = duration, memory = memory)
+}
 
 linear_pretrained_model_prediction <- function(params, dep_jobs, duration = "03:00:00", memory = "60GB"){
   MyWorkflowManager::wrap_script("src/run_linear_pretrained_model.R", params = params, 
