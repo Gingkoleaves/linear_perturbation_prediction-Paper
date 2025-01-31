@@ -540,9 +540,11 @@ filter_gt_df %>%
 
 
 ```{r, paged.print=FALSE}
-non_additive_colors <- c("Additive" = "lightgrey", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", "Buffering" = "#beaed4", "Below baseline" = colorspace::darken("#f0027f", 0.5))
+non_additive_colors <- c("Additive" = "lightgrey", "Other non-additive" = "#767676", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", "Buffering" = "#beaed4", "Below baseline" = colorspace::darken("#f0027f", 0.5))
 
-gene_response_label_df <- ground_truth_df |>
+
+
+gene_response_label_df_intermed <- ground_truth_df |>
   inner_join(expr_rank_df %>% dplyr::select(gene_name, seed, expr_rank) %>% filter(expr_rank <= 1000), by = c("gene_name", "seed")) %>%
   mutate(add =  (A + B - ctrl)) |>
   mutate(pert_same_dir = sign(A - ctrl) == sign(B - ctrl) & sign(AB - ctrl) == sign(A - ctrl)) %>%
@@ -555,10 +557,19 @@ gene_response_label_df <- ground_truth_df |>
     pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) > upper_thres ~ "Buffering",
      AB - (A + B - ctrl) > upper_thres |  AB - (A + B - ctrl) < lower_thres ~ "Other non-additive",
     .default = "Additive"
-  )) %>%
-  filter(label != "Other non-additive") |>
-  mutate(label = factor(label, levels = c("Additive", "Buffering", "Synergy", "Below baseline"))) 
+  )) 
 
+# print(sprintf("Total (%i) and fraction (%.3f) of all interactions are 'Other non-additive' interactions", 
+#               sum(gene_response_label_df_intermed$label == "Other non-additive"),
+#               mean(gene_response_label_df_intermed$label == "Other non-additive")))
+
+gene_response_label_df <- gene_response_label_df_intermed |>
+  # tidylog::filter(label != "Other non-additive") |>
+  mutate(label = factor(label, levels = c("Additive", "Other non-additive", "Buffering", "Synergy", "Below baseline")))
+```
+
+
+```{r, paged.print=FALSE}
 non_additive_counts <- gene_response_label_df %>%
   dplyr::count(label) %>%
   mutate(frac = n / sum(n)) |>
@@ -652,13 +663,14 @@ pert_pred_comparison <- pert_pred_comparison_df %>%
   mutate(pred_minus_add = clamp(pred_minus_add, max = 1.2)) %>%
   arrange(interaction_label) |>
   ggplot(aes(x = obs_minus_add, y = pred_minus_add)) +
-    geom_point(data = tibble(interaction_label = "Below baseline"), aes(x= 0, y = 0, color = interaction_label), stroke = 0, size = 0) +
+    # geom_point(data = tibble(interaction_label = "Below baseline"), aes(x= 0, y = 0, color = interaction_label), stroke = 0, size = 0) +
     ggrastr::rasterize(geom_point(aes(color = interaction_label), size = 0.2, stroke = 0), dpi = 600) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.3) +
     geom_vline(xintercept = c(lower_thres, upper_thres), linewidth = 0.2) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(-0.8, 0, 0.8)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(-1, 0, 1)) +
-    scale_color_manual(values = non_additive_colors, drop = FALSE) +
+    scale_color_manual(values = non_additive_colors, 
+                       labels = c("Additive", "Other non-additive" = "Other non-add.", "Buffering", "Synergy", "Below baseline"), drop = TRUE) +
     ggh4x::facet_nested_wrap(vars(approach, method), ncol = 5,
                              labeller = labeller(approach = as_labeller(approach_labels), 
                                                  method = as_labeller(method_labels)),
@@ -683,8 +695,8 @@ approx2 <- function(x, y, ...){
   tmp
 }
 
-tp_fdp_data_pre <- inter_pred_dat %>%
-  tidylog::inner_join(gene_response_label_df|> dplyr::select(gene_name, pert_group, seed,pert_same_dir,interaction_label = label), by = c("perturbation" = "pert_group", "gene_name", "seed")) |>
+tp_fdp_prec_recall_data_pre <- inter_pred_dat %>%
+  tidylog::left_join(gene_response_label_df|> dplyr::select(gene_name, pert_group, seed,pert_same_dir,interaction_label = label), by = c("perturbation" = "pert_group", "gene_name", "seed")) |>
   filter(method %in% names(method_labels)) %>%
   filter(method != "additive_model") |>
   mutate(method = factor(method, levels = names(method_labels))) %>%
@@ -694,12 +706,17 @@ tp_fdp_data_pre <- inter_pred_dat %>%
   arrange(desc(abs(pred_minus_add))) %>%
   mutate(tp = cumsum(true_nonadditive),
          fp = cumsum(! true_nonadditive)) %>%
-  mutate(fdp = fp / pmax(1, fp + tp)) %>%
+  mutate(fdp = fp / pmax(1, fp + tp),
+         fpr = fp / sum(! true_nonadditive),
+         precision = tp / (tp + fp),
+         recall = tp / sum(true_nonadditive)) %>%
   arrange(fdp) %>%
   mutate(tp = cummax(tp)) %>%
-  mutate(tpr = tp / sum(true_nonadditive))
+  mutate(tpr = tp / sum(true_nonadditive)) |>
+  ungroup()
 
-tp_fdp_data <- tp_fdp_data_pre %>%
+tp_fdp_data <- tp_fdp_prec_recall_data_pre %>%
+  group_by(method, seed) %>%
   reframe(tmp = approx2(fdp, tpr, xout = seq(0, 1, length.out = 101), yleft = 0, yright = 1)) %>%
   ungroup() %>%
   unnest(tmp) %>%
@@ -744,9 +761,7 @@ tp_fdp_pl
 
 
 ```{r, paged.print=FALSE}
-prediction_label_vs_true_df <- tp_fdp_data_pre |>
-  ungroup() |>
-  # filter(fdp < 0.5) |>
+prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
   slice_head(n = 500, by = c(method, seed)) |>
   mutate(prediction_label = case_when(
     baseline < ref & ref > value & value >= baseline ~ "buf",
@@ -757,7 +772,7 @@ prediction_label_vs_true_df <- tp_fdp_data_pre |>
     baseline > ref & baseline < value                ~ "anti",
     .default = "other"
   )) |>
-  tidylog::filter(pert_same_dir) |>
+  # tidylog::filter(pert_same_dir) |>
   count(method, interaction_label, prediction_label, seed) |>
   complete(method, prediction_label, interaction_label, fill = list(n = 0)) |>
   summarize(n = median(n), .by = c(method, prediction_label, interaction_label)) |>
@@ -767,16 +782,16 @@ prediction_label_vs_true_df <- tp_fdp_data_pre |>
 
 
 label_text <- str_trim("
-363 of the 500 non-additive interactions had 
-consistent single perturbation direction. 
-231 of those were predicted to be buffering, 
-but only 58\\% of actually were.
+236 of the top 500 predictions that 
+differed most from the add.\\ baseline,
+were predicted to be buffering, but
+only 58\\% of actually were (purple bar).
 ")
 
 mosaic_plot <- prediction_label_vs_true_df |>
   mutate(marginal_n = sum(n), .by = c(method, prediction_label)) |>
   mutate(marginal_frac = marginal_n / sum(marginal_n), .by = c(method, interaction_label)) |>
-  mutate(interaction_label = fct_rev(interaction_label)) |>
+  mutate(interaction_label = fct_relevel(interaction_label, "Other non-additive", "Additive", "Buffering", "Synergy")) |>
   ggplot(aes(x = frac, y = prediction_label)) + 
     geom_col(aes(fill = interaction_label, width = ifelse(marginal_frac == 0, 0, pmax(0.1, 1.5 * marginal_frac)))) +
     shadowtext::geom_shadowtext(data = . %>% distinct(method, prediction_label, marginal_n), 
@@ -790,7 +805,7 @@ mosaic_plot <- prediction_label_vs_true_df |>
     geom_text(data =tibble(method = factor("geneformer", levels = names(method_labels)), x = c(1.3), y = c(-1.6)), aes(x=x, y=y, label=label_text), hjust = 1, vjust = 1,
               size = font_size_tiny / .pt) +
     scale_x_continuous(labels = \(x) paste0(x * 100, "\\%"), expand = expansion(add = 0), position = "bottom") +
-    scale_y_discrete(labels = c(buf = "Buffering prediction", syn = "Synergy prediction", anti = "Below baseline\nprediction"), expand = expansion(add = c(0.4, 0.2))) +
+    scale_y_discrete(labels = c(buf = "Buffering prediction", syn = "Synergy prediction", anti = "Below baseline prediction"), expand = expansion(add = c(0.4, 0.2))) +
     scale_fill_manual(values = non_additive_colors) +
     facet_wrap(vars(method), labeller = labeller(method = as_labeller(method_labels)), nrow = 3, scales = "fixed") +
     labs(y = "", x = "Proportion of true interaction class") +
@@ -809,26 +824,7 @@ mosaic_plot
 Make ROC and PRC
 
 ```{r, paged.print=FALSE}
-stop("Make sure that I am applying the same filter regarding pert_same_dir as for the main figure")
-
-prec_recall_data <- inter_pred_dat %>%
-  filter(method %in% names(method_labels)) %>%
-  filter(method != "additive_model") |>
-  mutate(method = factor(method, levels = names(method_labels))) %>%
-  left_join(approach_annot, by = "method") %>%
-  mutate(true_nonadditive = obs_minus_add > upper_thres | obs_minus_add < lower_thres) %>%
-  group_by(method, seed) %>%
-  arrange(desc(abs(pred_minus_add))) %>%
-  mutate(tp = cumsum(true_nonadditive),
-         fp = cumsum(! true_nonadditive)) %>%
-  mutate(precision = tp / (tp + fp),
-         recall = tp / sum(true_nonadditive),
-         fpr = fp / sum(! true_nonadditive)) %>%
-  mutate(method = factor(method, levels = names(method_labels))) %>%
-  ungroup()
-
-
-auprc_dat_labels <- prec_recall_data %>%
+auprc_dat_labels <- tp_fdp_prec_recall_data_pre %>%
   arrange(precision) %>%
   summarize(auprc = -sum(zoo::rollmean(precision, k = 2) * diff(recall)),
             .by = c(method, seed)) %>%
@@ -839,7 +835,7 @@ auprc_dat_labels <- prec_recall_data %>%
   transmute(method, label = paste0(method_labels[method], " ($", round(mean, digits = 2), "\\pm", round(se, digits = 2), "$)")) %>%
   deframe()
 
-auc_dat_labels <- prec_recall_data %>%
+auc_dat_labels <- tp_fdp_prec_recall_data_pre %>%
   arrange(fpr) %>%
   summarize(auc = sum(zoo::rollmean(recall, k = 2) * diff(fpr)),
             .by = c(method, seed)) %>%
@@ -984,8 +980,8 @@ plot_assemble(
   add_plot(non_add_pl2, x = 62, y = 76, width = 20, height = 45),
   
   add_text("(E) Prediction of non-additive perturbation effects", x = 85, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(pert_pred_comparison + guides(color = "none"), x = 85, y = 68, width = 95, height = 62),
-  add_plot(my_get_legend(pert_pred_comparison + theme(legend.position = "right")), x = 163, y = 96, width = 17, height = 23),
+  add_plot(pert_pred_comparison + guides(color = "none"), x = 84, y = 68, width = 95, height = 62),
+  add_plot(my_get_legend(pert_pred_comparison + theme(legend.position = "right")), x = 162.5, y = 99, width = 17, height = 23),
   
   add_text("(F) Accuracy of non-additive predictions", x = 2.7, y = 134, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(tp_fdp_pl, x = 0, y = 142, width = 60, height = 58),
