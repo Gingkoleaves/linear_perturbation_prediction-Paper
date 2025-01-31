@@ -996,55 +996,67 @@ plot_assemble(
 )
 ```
 
-
-
 ```{r, paged.print=FALSE}
-good_synergy_preds <- tp_fdp_prec_recall_data_pre |>
-  filter(seed == 1) |>
+overlap_preparation_df <- tp_fdp_prec_recall_data_pre |>
   slice_head(n = 500, by = c(method)) |>
-  mutate(prediction_label = case_when(
-    baseline < ref & ref > value & value >= baseline ~ "buf",
-    baseline > ref & ref < value & value <= baseline ~ "buf",
-    baseline < ref & ref < value                     ~ "syn",
-    baseline > ref & ref > value                     ~ "syn",
-    baseline < ref & baseline > value                ~ "anti",
-    baseline > ref & baseline < value                ~ "anti",
-    .default = "other"
-  )) |>
-  filter(prediction_label == "buf" & interaction_label == "Synergy")
+  summarize(.by = c(perturbation, gene_name, seed, true_nonadditive, interaction_label),
+            methods = list(method_labels[method])) |>
+  mutate(shared_deep_learning_exclusives = lengths(methods) >= 3 & map_lgl(methods, \(x) ! "No Change" %in% x))
 
-good_synergy_preds
+upset_plot_pred_overlap <- overlap_preparation_df |>
+  ggplot(aes(x = methods)) +
+    geom_bar(aes(fill = shared_deep_learning_exclusives), show.legend = FALSE) +
+    scale_y_continuous(expand = expansion(add = 0)) +
+    ggupset::scale_x_upset(sets = unname(method_labels), n_intersections = 25) +
+    theme(axis.title.x = element_blank()) +
+    ggupset::theme_combmatrix(combmatrix.panel.point.size = 1,
+                              combmatrix.panel.line.size = 0.8)
+
+upset_plot_pred_overlap
 ```
-
 
 ```{r, paged.print=FALSE}
-plot_data <- inter_pred_dat %>%
-  tidylog::inner_join(gene_response_label_df|> dplyr::select(gene_name, pert_group, seed,pert_same_dir,interaction_label = label), by = c("perturbation" = "pert_group", "gene_name", "seed")) %>%
-  tidylog::filter(pert_same_dir) %>%
-  filter(seed == 1) %>%
-  mutate(rank = rank(-abs(pred_minus_add)), .by = method) %>%
-  inner_join(good_synergy_preds |> dplyr::select(method, gene_name, sel_pert = perturbation))
+tab1 <- overlap_preparation_df |>
+  filter(shared_deep_learning_exclusives) |>
+  count(gene_name) |>
+  slice_max(n, n = 10, with_ties = FALSE) |>
+  dplyr::rename(`Gene Name` = gene_name) 
 
-plot_data |>
-  mutate(perturbation_int = as.integer(fct_reorder(perturbation, ref)), .by = c(gene_name, method)) |>
-  mutate(true_nonadditive = obs_minus_add > upper_thres | obs_minus_add < lower_thres) %>%
-  ggplot(aes(x = perturbation_int)) +
-    geom_hline(aes(yintercept = baseline), alpha = 0.1) +
-    ungeviz::geom_hpline(aes(y = ref), color = "darkgrey", linewidth = 0.3, width = 0.8) +
-    geom_rect(aes(xmin = stage(perturbation_int, after_scale = x - 0.5), xmax = stage(perturbation_int, after_scale = x + 0.5), ymin = ref - lower_thres, ymax = ref + lower_thres),
-              fill = "#e2e2e2", alpha = 0.3) +
-    geom_rect(data = . %>% filter(perturbation == sel_pert), aes(xmin = stage(perturbation_int, after_scale = x - 0.5), xmax = stage(perturbation_int, after_scale = x + 0.5), ymin = -Inf, ymax = Inf),
-              fill = "green", alpha = 0.1) +
-    geom_point(aes(y = ground_truth, color = interaction_label), size = 1.6, stroke = 0) +
-    geom_point(aes(y = value), size = 0.6, stroke = 0, shape = "square") +
-    scale_color_manual(values = non_additive_colors, drop = FALSE) +
-    scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
-    facet_wrap(vars(method, gene_name), ncol = 6) +
-    guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
-    labs(y = "Expression of HBG2", x = "Double perturbation") +
-    theme(axis.text.x = element_text(size = 4))
+tab2 <- overlap_preparation_df |>
+  filter(shared_deep_learning_exclusives) |>
+  count(perturbation) |>
+  slice_max(n, n = 10, with_ties = FALSE) 
+
+shared_deep_learning_exclusives_tab <- cbind(tab1, tab2) |>
+  tinytable::tt() |>
+  tinytable:::build_tt(output = "latex") %>%
+  {
+    str <- (.@table_string) |>
+      str_remove_all("%%.*\n") |>
+      str_remove(r"(\\begin\{table\})") |>
+      str_remove(r"(\\end\{table\})") 
+    paste0("\\begin{minipage}{\\textwidth}", str, "\\end{minipage}")
+  }
 
 ```
+
+
+
+```{r}
+plot_assemble(
+  add_text("(A) Overlap of non-additive interaction calls", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(upset_plot_pred_overlap + labs(subtitle="Overlap of non-additive interactions where at least 3 DL tools agree and \\emph{no change} does not (blue bars)"),
+           x = 0, y = 4.5, width = 110, height = 60),
+  
+  add_text("(B) Genes and Perturbations ", x = 120, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text(str_replace_all(shared_deep_learning_exclusives_tab, "\n", " "), x = 100, y = 34, fontsize = font_size, vjust = 1, hjust = 0),
+
+
+  width = 180, height = 65, units = "mm", show_grid_lines = FALSE,
+  latex_support = TRUE, filename = "../plots/response-deep_learning_specific_calls.pdf"
+)
+```
+
 
 ```{r, paged.print=FALSE}
 all_predictions <- res %>%
@@ -1057,7 +1069,7 @@ all_predictions <- res %>%
 
 
 expression_variation_pl <- all_predictions |>
-  summarize(.by = c(gene_name, method, seed, train),
+  summarize(.by = c(gene_name, method, seed),
             sd = sd(prediction)) |>
   mutate(method = factor(method, levels = c("ground_truth", names(method_labels)))) |>
   ggplot(aes(x = sd)) +
@@ -1065,7 +1077,7 @@ expression_variation_pl <- all_predictions |>
     geom_vline(data = . %>% filter(method == "ground_truth") %>% summarize(sd = mean(sd)), aes(xintercept = sd), color = "red") +
     scale_x_continuous(transform = scales::pseudo_log_trans(sigma = 0.01), limits = c(-0.002, 1.6), 
                        breaks = c(0, 0.1, 0.5, 1.5), expand = expansion(mult = c(0, 0.1))) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, 16000)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, 5000)) +
     facet_wrap(vars(method), labeller = as_labeller(c(ground_truth = "Ground Truth", method_labels)), scales = "free", nrow = 2) +
     labs(x = "pseudo log of the expression Standard Deviation per Gene")
 
