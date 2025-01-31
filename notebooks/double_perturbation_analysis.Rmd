@@ -762,7 +762,8 @@ tp_fdp_pl
 
 ```{r, paged.print=FALSE}
 prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
-  slice_head(n = 500, by = c(method, seed)) |>
+  filter(seed == 1) |>
+  slice_head(n = 500, by = c(method)) |>
   mutate(prediction_label = case_when(
     baseline < ref & ref > value & value >= baseline ~ "buf",
     baseline > ref & ref < value & value <= baseline ~ "buf",
@@ -772,20 +773,20 @@ prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
     baseline > ref & baseline < value                ~ "anti",
     .default = "other"
   )) |>
-  # tidylog::filter(pert_same_dir) |>
-  count(method, interaction_label, prediction_label, seed) |>
+  count(method, interaction_label, prediction_label) |>
   complete(method, prediction_label, interaction_label, fill = list(n = 0)) |>
   summarize(n = median(n), .by = c(method, prediction_label, interaction_label)) |>
   mutate(frac = n / sum(n), .by = c(prediction_label, method)) |>
   filter(method != "additive_model") 
 
 
+prediction_label_vs_true_df |> filter(method =="geneformer" & prediction_label == "buf")
 
 label_text <- str_trim("
-236 of the top 500 predictions that 
+377 of the top 500 predictions that 
 differed most from the add.\\ baseline,
 were predicted to be buffering, but
-only 58\\% of actually were (purple bar).
+only 45\\% of actually were (purple bar).
 ")
 
 mosaic_plot <- prediction_label_vs_true_df |>
