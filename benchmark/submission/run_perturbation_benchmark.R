@@ -135,6 +135,5 @@ gpu_info <- bind_rows(c(map(names(double_pert_jobs$dependencies), \(n){
 
 
 stats_df |>
-  left_join(gpu_info, by = "name")
-
-write_tsv(stats_df, "output/single_perturbation_jobs_stats.tsv")
+  left_join(gpu_info, by = "name") |>
+  write_tsv("output/single_perturbation_jobs_stats.tsv")
