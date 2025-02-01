@@ -210,7 +210,7 @@ method_labels <- c("mean" = "Mean",
                    "lpm_selftrained" = "LM based\non training",
                    "scgpt" = "scGPT", "scfoundation" = "scFoundation", 
                    "uce" = "UCE*", "scbert" = "scBERT*",  "geneformer" = "Gene-\nformer*",
-                   "gears" = "GEARS", "cpa" = "CPA",
+                   "gears" = "GEARS",
                    "lpm_scFoundationGeneEmb" = "LM with $\\matr{G}$ from scFoundation",
                    "lpm_scgptGeneEmb" = "LM with $\\matr{G}$ from scGPT",
                    "lpm_randomGeneEmb" = "LM with random $\\matr{G}$",
@@ -312,7 +312,7 @@ main_plots <- lapply(names(dataset_labels), \(dataset_name){
       scale_x_discrete(labels = method_labels, drop=TRUE, expand = expansion(add = 0.7)) +
       scale_y_continuous(expand = expansion(add = c(0, 0.5))) +
       scale_alpha_manual(values = c("TRUE" = 0, "FALSE" = 0.6)) +
-      guides(x = legendry::guide_axis_nested(key = legendry::key_range_auto(sep = "\\|"))) + 
+      guides(x = legendry::guide_axis_nested(key = legendry::key_range_auto(sep = "\\|"), drop_zero = FALSE)) + 
       labs(y = "Prediction error ($L_2$)", subtitle = dataset_labels[dataset_name]) +
       coord_cartesian(ylim = c(0, 10)) +
       theme(axis.title.x = element_blank(),
@@ -337,7 +337,7 @@ main_plots <- lapply(names(dataset_labels), \(dataset_name){
       scale_y_continuous(limits = c(0, 1), expand = expansion(add = c(0, 0))) +
       scale_alpha_manual(values = c("TRUE" = 0, "FALSE" = 0.6)) +
       guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
-      guides(x = legendry::guide_axis_nested(key = legendry::key_range_auto(sep = "\\|"))) + 
+      guides(x = legendry::guide_axis_nested(key = legendry::key_range_auto(sep = "\\|"), drop_zero = FALSE)) + 
       labs(y = "Pearson Delta", subtitle = dataset_labels[dataset_name]) +
       theme(axis.title.x = element_blank(),
             axis.text.x = element_text(lineheight = 0.7),
@@ -392,7 +392,7 @@ strat_data_de_rank <- full_long_df %>%
 method_labels_other <- c("mean" = "Mean", "lpm_selftrained" = "LM based\non training",
                    "scgpt" = "scGPT", "scfoundation" = "scFoundation",
                    "uce" = "UCE*", "geneformer" = "Geneformer*", "scbert" = "scBERT*",
-                   "gears" = "GEARS", "cpa" = "CPA")
+                   "gears" = "GEARS", "cpa" = "")
 ggplot_colors_five <- colorspace::qualitative_hcl(length(method_labels_other), h = c(0, 270), c = 60, l = 70)
 names(ggplot_colors_five) <- names(method_labels_other)
 
@@ -403,6 +403,7 @@ label_pos <- c(mean = 640, lpm_selftrained = 320, scgpt = 5, uce = 160,
 strat_plot <- strat_data_expr_rank %>%
   mutate(dataset_name = factor(dataset_name, levels = names(dataset_labels))) |>
   mutate(method = factor(method, levels = names(method_labels_other))) %>%
+  filter(method != "cpa") |>
   summarize(dist_mean = mean(dist),
             dist_se = sd(dist) / sqrt(first(rank)),
             .by = c(method, dataset_name, seed, rank)) %>%
@@ -410,15 +411,15 @@ strat_plot <- strat_data_expr_rank %>%
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.3), dpi = 600) +
     ggrepel::geom_text_repel(data = . %>% filter(dataset_name == "replogle_k562_essential") %>% 
                                mutate(annot = ifelse(rank((rank - label_pos[as.character(method)])^2, ties.method = "first") == 1, method_labels_other[as.character(method)],  ""), .by = method),
-                            aes(label = annot, color = stage(method, after_scale = colorspace::darken(color, 0.5))), size = font_size_tiny / .pt,
+                            aes(label = annot, color = stage(method, after_scale = colorspace::darken(color, 0.2))), size = font_size_tiny / .pt,
                            min.segment.length = 0, box.padding = 0.15, point.padding = 0, lineheight = 0.7,
                            bg.colour  = "white", max.overlaps = Inf, seed = 1,
                            ylim = c(0, Inf), xlim = c(-Inf, 2000)) +
     geom_vline(data = tibble(rank = 1000), aes(xintercept = rank),linewidth = 0.4, linetype = "dashed", color = "grey") +
     scale_x_log10() +
-    scale_y_continuous(limits = c(0, 8), expand = expansion(add = c(0, 0.5))) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(add = c(0, 0.5))) +
     scale_color_manual(values = ggplot_colors_five) +
-    facet_wrap(vars(dataset_name), , labeller = as_labeller(dataset_labels), nrow = 1) +
+    facet_wrap(vars(dataset_name), , labeller = as_labeller(dataset_labels), nrow = 1, scales = "free_y") +
     labs(x = "Number of genes (log-scale)", y = "Mean prediction error", color = "") +
     guides(color = "none") +
     coord_cartesian(clip = "off") +
@@ -428,6 +429,7 @@ strat_plot <- strat_data_expr_rank %>%
 strat_de_plot <- strat_data_de_rank %>%
   mutate(dataset_name = factor(dataset_name, levels = names(dataset_labels))) |>
   mutate(method = factor(method, levels = names(method_labels_other))) %>%
+  filter(method != "cpa") |>
   summarize(dist_mean = mean(dist),
             dist_se = sd(dist) / sqrt(first(rank)),
             .by = c(method, dataset_name, rank)) %>%
@@ -435,14 +437,14 @@ strat_de_plot <- strat_data_de_rank %>%
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.3), dpi = 600) +
     ggrepel::geom_text_repel(data = . %>% filter(dataset_name == "replogle_k562_essential") %>% 
                                mutate(annot = ifelse(rank((rank - label_pos[as.character(method)])^2, ties.method = "first") == 1, method_labels_other[as.character(method)],  ""), .by = method),
-                            aes(label = annot, color = stage(method, after_scale = colorspace::darken(color, 0.5))), size = font_size_tiny / .pt,
+                            aes(label = annot, color = stage(method, after_scale = colorspace::darken(color, 0.2))), size = font_size_tiny / .pt,
                            min.segment.length = 0, box.padding = 0.25, point.padding = 0, lineheight = 0.7,
                            bg.colour  = "white", max.overlaps = Inf, seed = 1,
                            ylim = c(0, Inf), xlim = c(-Inf, Inf)) +
     scale_x_log10() +
-    scale_y_continuous(limits = c(0, 8), expand = expansion(add = c(0, 0.5))) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(add = c(0, 0.5))) +
     scale_color_manual(values = ggplot_colors_five) +
-    facet_wrap(vars(dataset_name), , labeller = as_labeller(dataset_labels), nrow = 1) +
+    facet_wrap(vars(dataset_name), , labeller = as_labeller(dataset_labels), nrow = 1, scales = "free_y") +
     labs(x = "Number of genes (log-scale)", y = "Mean prediction error", color = "") +
     guides(color = "none") +
     coord_cartesian(clip = "off") +
@@ -457,13 +459,13 @@ strat_de_plot
 
 ```{r}
 plot_assemble(
-  add_text("(A) Single perturbation prediction correlation", 
+  add_text("(A) Single unseen perturbation prediction correlation", 
            x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(main_plots[[1]]$pearson_delta_plot, x = 3, y = 5, width = 110, height = 37.5),
   add_plot(main_plots[[2]]$pearson_delta_plot, x = 3, y = 5 + 37.5, width = 110, height = 37.5),
   add_plot(main_plots[[3]]$pearson_delta_plot, x = 3, y = 5 + 37.5 * 2, width = 110, height = 37.5),
   
-  add_text("(B) Prediction error stratified by number of considered genes", 
+  add_text("(B) Prediction error stratified by the considered gene sets", 
            x = 2.7, y = 120, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_text("Genes sorted by expression", 
            x = 8.7, y = 124.5, fontsize = font_size_small, vjust = 1, fontface = "plain"),
@@ -480,7 +482,7 @@ plot_assemble(
 
 
 ```{r, paged.print=FALSE}
-bootstrap <- function(data, FUN, n_iterations = 1000, map_fun = purrr::map){
+bootstrap <- function(data, FUN, n_iterations = 10000, map_fun = purrr::map){
   n <- length(data)
   tibble(bootstrap_iteration = seq_len(n_iterations),
          value = map_fun(seq_len(n_iterations), \(idx){
@@ -524,8 +526,8 @@ forest_plot <- res_metrics_including_transfer |>
     geom_vline(xintercept = 1) +
     geom_pointrange(aes(color = dataset_name, alpha = includes_zero, xmin = l2$conf.lower, xmax = l2$conf.higher),
                     position = position_dodge2(width = 0.5, reverse = TRUE), fatten = 0.6, size = 0.8) +
-    geom_segment(aes(x = 1.1+1e-6, xend = Inf, color = dataset_name, 
-                     alpha = I(case_when(includes_zero & l2$conf.higher > 1.1 ~ 0.3, ! includes_zero & l2$conf.higher > 1.1 ~ 1, .default = 0))), 
+    geom_segment(aes(x = 1.105+1e-6, xend = Inf, color = dataset_name, 
+                     alpha = I(case_when(includes_zero & l2$conf.higher > 1.105 ~ 0.3, ! includes_zero & l2$conf.higher > 1.105 ~ 1, .default = 0))), 
                  position = position_dodge2(width = 0.5, reverse = TRUE, preserve = "single"),  show.legend = FALSE, 
                  arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     geom_segment(aes(x = 0.86, xend = 0.846, color = dataset_name, 
@@ -538,8 +540,8 @@ forest_plot <- res_metrics_including_transfer |>
     scale_y_discrete(labels = updated_method_labels, expand = expansion(add = 0.8)) +
     ggforce::facet_col(vars(category), scales = "free_y", space = "free") +
     guides(alpha = "none", color = guide_legend(override.aes = list(size = 0.2))) +
-    labs(color = "", x = "Error relative to error of \\emph{Mean} (lower is better)") +
-    coord_cartesian(xlim = c(0.85, 1.1), clip = "on") +
+    labs(color = "", x = "Error relative to \\emph{Mean} baseline (lower is better)") +
+    coord_cartesian(xlim = c(0.85, 1.105), clip = "on") +
     theme(strip.text = element_blank(), panel.spacing.y = unit(0, "pt"),
           axis.title.y = element_blank(), 
           panel.grid.major = element_line(color = "#e4e4e4", linewidth = 0.1)
@@ -552,7 +554,7 @@ forest_plot
 
 ```{r}
 plot_assemble(
-  add_text("(A) Single perturbation prediction error", 
+  add_text("(A) Single unseen perturbation prediction error", 
            x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(main_plots[[1]]$main_pl, x = 0, y = 5, width = 95, height = 37.5),
   add_plot(main_plots[[2]]$main_pl + theme(axis.title.y = element_blank(), axis.text.y = element_blank()), x = 95, y = 5, width = 85, height = 37.5),
@@ -597,23 +599,6 @@ rpe1_k562_compl_pl <- k562_rpe1_comp |>
          x = "Expression in K562", y = "Expression in RPE1")
 ```
 
-```{r}
-label_latex_scientific <- function(..., exponent_digits = 1){
-  helper <- scales::label_scientific(...)
-  function(x){
-      res <- helper(x)
-      spl <- stringr::str_split_fixed(res, "e", n = 2)
-      mant <- spl[,1]
-      exp <- spl[,2]
-      exp <- sprintf(paste0("%0", exponent_digits, "i"), as.integer(exp))
-      ifelse(exp == "", mant, paste0("$", mant, "\\times10^{", exp, "}$"))
-  }
-}
-
-
-latex_10pow_labeller <- label_latex_scientific(digits = 1)
-```
-
 
 ```{r, paged.print=FALSE}
 transfer_rpe1 <- full_long_df_including_transfer |>
@@ -641,7 +626,7 @@ transfer_rpe1_pl <- transfer_rpe1 |>
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3, 4)) +
     labs(subtitle = sprintf("RPE1: slope= %.2f", coef(rpe1_lm)[2]),
-         x = "Absolute difference of gene expression in RPE1 vs K562",
+         x = "Absolute difference of gene expression in RPE1 and K562",
          y = "Absolute difference of\nPredicted and Observed")
 
 transfer_k562_pl <- transfer_k562 |>
@@ -652,7 +637,7 @@ transfer_k562_pl <- transfer_k562 |>
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3, 4)) +
     labs(subtitle = sprintf("K562: slope= %.2f", coef(k562_lm)[2]),
-         x = "Absolute difference of gene expression in RPE1 vs K562",
+         x = "Absolute difference of gene expression in RPE1 and K562",
          y = "Absolute difference of\nPredicted and Observed")
 ```
 
@@ -692,7 +677,7 @@ rpe1_target_cor_pl <- ggplot(rpe1_target_cor_dat, aes(x = abs(rpe1_baseline - k5
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 0.5, 1)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     labs(subtitle = sprintf("RPE1: slope = %.2f", coef(rpe1_target_lm)[2]),
-         x = "Absolute difference of perturbation target\ngene expression in RPE1 vs K562",
+         x = "Absolute difference of perturbation target\ngene expression in RPE1 and K562",
          y = "Pearson Delta")
 
 k562_target_cor_dat <- res_metrics_including_transfer |>
@@ -714,7 +699,7 @@ k562_target_cor_pl <- ggplot(k562_target_cor_dat, aes(x = abs(rpe1_baseline - k5
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 0.5, 1)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     labs(subtitle = sprintf("K562: slope = %.2f", coef(k562_target_lm)[2]),
-         x = "Absolute difference of perturbation target\ngene expression in RPE1 vs K562",
+         x = "Absolute difference of perturbation target\ngene expression in RPE1 and K562",
          y = "Pearson Delta")
 ```
 
@@ -739,6 +724,9 @@ plot_assemble(
   latex_support = TRUE, filename = "../plots/suppl-k562_rpe1_transfer.pdf"
 )
 ```
+
+
+
 
 
 # Session Info

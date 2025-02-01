@@ -209,10 +209,10 @@ main_pl_double_l2 <- main_pl_data %>%
                  aes(yintercept = l2_best), color = "grey", linetype = "dashed") +
     ungeviz::geom_hpline(data = . %>% summarize(l2 = mean(l2), .by = c(approach, label)), aes(y = l2), 
                          color = "red", width = 0.6, linewidth = 0.6) +
-    ggbezier::geom_bezier(data = tibble(approach = "baseline", x = c(1, 1.5), y = c(8.5, 10)),
+    ggbezier::geom_bezier(data = tibble(approach = factor("baseline",  levels(main_pl_data$approach)), x = c(1, 1.5), y = c(8.5, 10)),
                           aes(x = x, y = y, angle = c(0, 90)), arrow = grid::arrow(type = "closed", ends = "first", length = unit(1, "mm"))) +
-    geom_text(data = tibble(x = 1.5, y = 10.1, label = "CEBPE+CEBPB", approach = "baseline"), aes(x=x, y=y, label=label), hjust = 0.2, vjust = 0,
-              size = font_size_tiny / .pt) +
+    # geom_text(data = tibble(x = 1.5, y = 10.1, text = "CEBPE+CEBPB", approach = factor("baseline",  levels(main_pl_data$approach))),
+    #                         aes(x=x, y=y, label=text), hjust = 0.2, vjust = 0, size = font_size_tiny / .pt) +
     ggforce::facet_row(vars(approach), scales = "free_x", space = "free", labeller = as_labeller(approach_labels)) +
     scale_x_discrete(expand = expansion(add = 0.7)) +
     scale_y_continuous(limits = c(0, 12.5), expand = expansion(add = c(0, 0.5))) +
@@ -357,7 +357,7 @@ plot_assemble(
            x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(main_pl_double_pearson, x = 3, y = 4, width = 130, height = 47.5),
   
-  add_text("(B) Prediction error stratified by the number of considered genes",
+  add_text("(B) Prediction error stratified by the considered gene sets",
            x = 2.7, y = 53, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(strat_pl, x = 3, y = 55, width = 100, height = 80),
   
@@ -396,6 +396,7 @@ filter_gt_df <- ground_truth_df %>%
 
 
 ```{r, paged.print=FALSE}
+set.seed(1)
 locfdr_est <- locfdr::locfdr(filter_gt_df$error, nulltype = 1)
 locfdr_est$z.2
 locfdr_est$fp0
@@ -451,7 +452,7 @@ qq_pl <- filter_gt_df %>%
     annotate_labels_along(dir = c(1, sd_est), at = 4.5, labels = "Percentile", offset = 0.15, size = font_size_small / .pt) +
     ggrastr::rasterize(geom_point(size = 0.3, stroke = 0), dpi = 300) +
     coord_fixed() +
-    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the\ntrue difference from additive expectation")
+    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the observed\ndifferencefrom additive expectation")
 qq_pl
 ```
 
@@ -521,10 +522,10 @@ plot_assemble(
            x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(qq_pl, x = 3, y = 2, width = 120, height = 47.5),
   
-  add_text("(B) Empirical null decomposition", x = 2.7, y = 50, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(error_histogram, x = 3, y = 52, width = 50, height = 40),
+  add_text("(B) Empirical null decomposition", x = 124.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(error_histogram, x = 125, y = 4.5, width = 50, height = 41.5),
   
-  width = 170, height = 95, units = "mm", show_grid_lines = FALSE,
+  width = 180, height = 50, units = "mm", show_grid_lines = FALSE,
   latex_support = TRUE, filename = "../plots/suppl-qqplot.pdf"
 )
 ```
@@ -540,7 +541,8 @@ filter_gt_df %>%
 
 
 ```{r, paged.print=FALSE}
-non_additive_colors <- c("Additive" = "lightgrey", "Other non-additive" = "#767676", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", "Buffering" = "#beaed4", "Below baseline" = colorspace::darken("#f0027f", 0.5))
+non_additive_colors <- c("Additive" = "lightgrey", "Other non-additive" = "#767676", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", 
+                         "Buffering" = "#beaed4", "Cryptic" = colorspace::darken("#f0027f", 0.5))
 
 
 
@@ -551,21 +553,17 @@ gene_response_label_df_intermed <- ground_truth_df |>
   mutate(label = case_when(
     pert_same_dir & ctrl < (A+B-ctrl) & AB - (A + B - ctrl) > upper_thres ~ "Synergy",
     pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres ~ "Synergy",
-    pert_same_dir & ctrl < (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres & AB < ctrl ~ "Anti-Synergy",
-    pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres & AB > ctrl ~ "Anti-Synergy",
+    pert_same_dir & ctrl < (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres & AB < ctrl ~ "Cryptic",
+    pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres & AB > ctrl ~ "Cryptic",
     pert_same_dir & ctrl < (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres ~ "Buffering",
     pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) > upper_thres ~ "Buffering",
      AB - (A + B - ctrl) > upper_thres |  AB - (A + B - ctrl) < lower_thres ~ "Other non-additive",
     .default = "Additive"
   )) 
 
-# print(sprintf("Total (%i) and fraction (%.3f) of all interactions are 'Other non-additive' interactions", 
-#               sum(gene_response_label_df_intermed$label == "Other non-additive"),
-#               mean(gene_response_label_df_intermed$label == "Other non-additive")))
 
 gene_response_label_df <- gene_response_label_df_intermed |>
-  # tidylog::filter(label != "Other non-additive") |>
-  mutate(label = factor(label, levels = c("Additive", "Other non-additive", "Buffering", "Synergy", "Below baseline")))
+  mutate(label = factor(label, levels = c("Additive", "Other non-additive", "Buffering", "Synergy", "Cryptic")))
 ```
 
 
@@ -670,7 +668,7 @@ pert_pred_comparison <- pert_pred_comparison_df %>%
     scale_x_continuous(expand = expansion(add = 0), breaks = c(-0.8, 0, 0.8)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(-1, 0, 1)) +
     scale_color_manual(values = non_additive_colors, 
-                       labels = c("Additive", "Other non-additive" = "Other non-add.", "Buffering", "Synergy", "Below baseline"), drop = TRUE) +
+                       labels = c("Additive", "Other non-additive" = "Other non-add.", "Buffering", "Synergy", "Cryptic"), drop = TRUE) +
     ggh4x::facet_nested_wrap(vars(approach, method), ncol = 5,
                              labeller = labeller(approach = as_labeller(approach_labels), 
                                                  method = as_labeller(method_labels)),
@@ -806,7 +804,7 @@ mosaic_plot <- prediction_label_vs_true_df |>
     geom_text(data =tibble(method = factor("geneformer", levels = names(method_labels)), x = c(1.3), y = c(-1.6)), aes(x=x, y=y, label=label_text), hjust = 1, vjust = 1,
               size = font_size_tiny / .pt) +
     scale_x_continuous(labels = \(x) paste0(x * 100, "\\%"), expand = expansion(add = 0), position = "bottom") +
-    scale_y_discrete(labels = c(buf = "Buffering prediction", syn = "Synergy prediction", anti = "Below baseline prediction"), expand = expansion(add = c(0.4, 0.2))) +
+    scale_y_discrete(labels = c(buf = "Buffering prediction", syn = "Synergy prediction", anti = "Cryptic prediction"), expand = expansion(add = c(0.4, 0.2))) +
     scale_fill_manual(values = non_additive_colors) +
     facet_wrap(vars(method), labeller = labeller(method = as_labeller(method_labels)), nrow = 3, scales = "fixed") +
     labs(y = "", x = "Proportion of true interaction class") +
@@ -847,7 +845,7 @@ auc_dat_labels <- tp_fdp_prec_recall_data_pre %>%
   transmute(method, label = paste0(method_labels[method], " ($", round(mean, digits = 2), "\\pm", round(se, digits = 2), "$)")) %>%
   deframe()
 
-prc_plot <- prec_recall_data %>%
+prc_plot <- tp_fdp_prec_recall_data_pre %>%
   mutate(method = factor(method, levels = names(auprc_dat_labels))) %>%
   ggplot(aes(x = recall, y = precision)) +
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.2), dpi = 300) +
@@ -861,7 +859,7 @@ prc_plot <- prec_recall_data %>%
          color = "",
          title = "(A) Precision-Recall Curve (PRC)")
 
-roc_plot <- prec_recall_data %>%
+roc_plot <- tp_fdp_prec_recall_data_pre %>%
   mutate(method = factor(method, levels = names(auc_dat_labels))) %>%
   ggplot(aes(x = fpr, y = recall)) +
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.2), dpi = 300) +
@@ -939,7 +937,7 @@ cartoon_plot <-bar_df |>
     geom_segment(data = . %>% filter(bar == "Add"), aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
                  arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
     annotate("segment", x = "Add", xend = Inf, y = 0.55, color = "grey", linetype = "dashed") +
-    annotate("text", x = "obs", y = 0.15, label = "Below\nbaseline", size = font_size_tiny / .pt, color = "black") +
+    annotate("text", x = "obs", y = 0.15, label = "Cryptic", size = font_size_tiny / .pt, color = "black") +
     annotate("text", x = "obs", y = 0.375, label = "Buffering", size = font_size_tiny / .pt, color = "black") +
     annotate("text", x = "obs", y = 0.55, label = "Additive", size = font_size_tiny / .pt, color = "black") +
     annotate("text", x = "obs", y = 0.75, label = "Synergy", size = font_size_tiny / .pt, color = "black") +
@@ -967,13 +965,13 @@ plot_assemble(
   add_text("(A) Double perturbation prediction error", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(main_pl_double_l2, x = 0, y = 4, width = 125, height = 60),
 
-  add_text("(B) Example: CEBPE+CEBPB {\\scriptsize\\textcolor{baseROrange}\\faCircle}", x = 128, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(B) Example:\\;{\\scriptsize\\textcolor{baseROrange}\\faCircle}\\;CEBPE+CEBPB", x = 128, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(obs_pred_corr_pl, x = 125, y = 4, width = 58, height = 60),
 
   add_text("(C) Classification of\n\\;\\;interactions", x = 2.7, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(cartoon_plot, x = 1, y = 76, width = 40, height = 50),
   
-  add_text("(D) Composition of\n\\;\\;interaction effects", x = 43, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(D) True composition\nof interaction classes", x = 43, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(non_add_pl1, x = 42, y = 76, width = 20, height = 45),
   add_plot(grid::polygonGrob(x = c(0.392, 0.71, 0.71, 0.392), y = c(0.965, 0.965, 0.05, 0.93),
                             gp = grid::gpar(fill = non_additive_colors["Non-additive"], alpha = 0.2, lty = 0)),
@@ -1025,10 +1023,13 @@ tab1 <- overlap_preparation_df |>
 tab2 <- overlap_preparation_df |>
   filter(shared_deep_learning_exclusives) |>
   count(perturbation) |>
-  slice_max(n, n = 10, with_ties = FALSE) 
+  slice_max(n, n = 10, with_ties = FALSE)  |>
+  dplyr::rename(`Perturbation` = perturbation)
 
 shared_deep_learning_exclusives_tab <- cbind(tab1, tab2) |>
   tinytable::tt() |>
+  tinytable::style_tt(fontsize = 0.8) |>
+  tinytable::style_tt(j = 2, line = "r") |>
   tinytable:::build_tt(output = "latex") %>%
   {
     str <- (.@table_string) |>
@@ -1038,8 +1039,8 @@ shared_deep_learning_exclusives_tab <- cbind(tab1, tab2) |>
     paste0("\\begin{minipage}{\\textwidth}", str, "\\end{minipage}")
   }
 
+cat(shared_deep_learning_exclusives_tab)
 ```
-
 
 
 ```{r}
@@ -1048,7 +1049,7 @@ plot_assemble(
   add_plot(upset_plot_pred_overlap + labs(subtitle="Overlap of non-additive interactions where at least 3 DL tools agree and \\emph{no change} does not (blue bars)"),
            x = 0, y = 4.5, width = 110, height = 60),
   
-  add_text("(B) Genes and Perturbations ", x = 120, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(B) Deep Learning interactions not\n\\;\\;found by \\emph{no change}", x = 120, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_text(str_replace_all(shared_deep_learning_exclusives_tab, "\n", " "), x = 100, y = 34, fontsize = font_size, vjust = 1, hjust = 0),
 
 
@@ -1076,9 +1077,9 @@ expression_variation_pl <- all_predictions |>
     geom_histogram() +
     geom_vline(data = . %>% filter(method == "ground_truth") %>% summarize(sd = mean(sd)), aes(xintercept = sd), color = "red") +
     scale_x_continuous(transform = scales::pseudo_log_trans(sigma = 0.01), limits = c(-0.002, 1.6), 
-                       breaks = c(0, 0.1, 0.5, 1.5), expand = expansion(mult = c(0, 0.1))) +
+                       breaks = c(0, 0.02, 0.1, 0.5, 1.5), expand = expansion(mult = c(0, 0.1))) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, 5000)) +
-    facet_wrap(vars(method), labeller = as_labeller(c(ground_truth = "Ground Truth", method_labels)), scales = "free", nrow = 2) +
+    facet_wrap(vars(method), labeller = as_labeller(c(ground_truth = "Ground Truth", method_labels)), scales = "free", nrow = 3) +
     labs(x = "pseudo log of the expression Standard Deviation per Gene")
 
 expression_variation_pl
@@ -1280,7 +1281,7 @@ pl1 <- plot_data |>
               fill = "#e2e2e2", alpha = 0.3) +
     geom_point(aes(y = ground_truth, color = interaction_label), size = 1.6, stroke = 0) +
     geom_point(aes(y = value), size = 0.6, stroke = 0, shape = "square") +
-    scale_color_manual(values = non_additive_colors, drop = FALSE) +
+    scale_color_manual(values = non_additive_colors, drop = TRUE) +
     scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
     facet_wrap(vars(method), nrow = 3, labeller = as_labeller(method_labels)) +
     guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
@@ -1298,7 +1299,7 @@ pl2 <- plot_data |>
               fill = "#e2e2e2", alpha = 0.3) +
     geom_point(aes(y = ground_truth, color = interaction_label), size = 1.6, stroke = 0) +
     geom_point(aes(y = value), size = 0.6, stroke = 0, shape = "square") +
-    scale_color_manual(values = non_additive_colors, drop = FALSE) +
+    scale_color_manual(values = non_additive_colors, drop = TRUE) +
     scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
     facet_wrap(vars(method), nrow = 3, labeller = as_labeller(method_labels)) +
     guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
@@ -1309,12 +1310,14 @@ pl2 <- plot_data |>
 
 ```{r}
 plot_assemble(
-  add_text("(A) Analysis of the predicted and observed expression patterns for HBG2 and HBZ", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("Analysis of the predicted and observed expression patterns for HBG2 and HBZ", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_text(paste0("Comparison of the observed expression {\\scriptsize\\textcolor{nonAdditivePurple}\\faCircle}\\,{\\scriptsize\\textcolor{nonAdditiveGrey}\\faCircle}\\,{\\scriptsize\\textcolor{nonAdditiveOrange}\\faCircle} ",
                   "against predicted value {\\tiny\\faSquare} for each double perturbation. The grey box in the background shows the additive range."),
            x = 2.7, y = 6, fontsize = font_size_small, vjust = 1),
   add_plot(pl1, x = 0, y = 8, width = 180, height = 90),
   add_plot(pl2, x = 0, y = 100, width = 180, height = 90),
+  add_plot(my_get_legend(pl2 + guides(color = guide_legend(title = "", direction = "horizontal", nrow = 1))),
+           x = 140, y = 170, width = 20, height = 10),
 
   width = 180, height = 190, units = "mm", show_grid_lines = FALSE,
   latex_support = TRUE, filename = "../plots/suppl-top_gene_plots.pdf"

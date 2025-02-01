@@ -135,8 +135,8 @@ dataset_umaps <- tibble(dataset = names(dataset_labels),
     ggrepel::geom_text_repel( aes(label = label), max.overlaps = Inf, size = font_size_tiny / .pt,
                             min.segment.length = 0, bg.color = "white", color = "black") +
     facet_wrap(vars(dataset), labeller = as_labeller(dataset_labels), nrow = 1) +
-    coord_fixed() +
-    labs(color = "", x = "UMAP 1", y = "UMAP 2") +
+    guides(color = guide_legend(title = "", override.aes = list(size = 1))) +
+    small_axis(label = "UMAP", fontsize = font_size_small) +
     theme(legend.position = "bottom")
 
 dataset_umaps
@@ -147,7 +147,7 @@ dataset_umaps
 dataset_table <- str_trim(r"(
 \begin{minipage}{\textwidth}
 \begin{tabular}{p{5cm} p{3.6cm}p{6.5cm}}
-	Dataset & Size (Genes $\times$ Cells) & Perturbations\\
+	Dataset (cell line) & Size (Genes $\times$ Cells) & Perturbations\\
 	\hline
 	Norman (K562) & $19\,264\times 84\,143$ & $124$ double and $100$ single perturbations\\
 	Replogle (K562) & $5\,000 \times 162\,264$ & $1\,088$ single perturbations \\
@@ -177,6 +177,196 @@ plot_assemble(
 
   width = 180, height = 185, units = "mm", show_grid_lines = FALSE,
   latex_support = TRUE, filename = "../plots/suppl-dataset_overview.pdf"
+)
+```
+
+
+
+## Prediction variation
+
+#### Double perturbation
+
+```{r}
+pert_res <- bind_rows(readRDS("../benchmark/output/double_perturbation_results_predictions.RDS"))
+parameters <- readRDS(file.path("../benchmark/output/double_perturbation_results_parameters.RDS")) %>%
+  map(\(p) tibble(id = p$id, name = p$name, parameters = as_tibble(p$parameters), 
+                  train = names(p$test_train_labels), perturbation = p$test_train_labels)) %>%
+  bind_rows() %>%
+  unnest(perturbation) %>%
+  unpack(parameters)
+```
+
+
+
+```{r, paged.print=FALSE}
+res <- pert_res %>%
+  mutate(perturbation_split = str_split(perturbation, pattern = "[+_]", n = 2)) %>%
+  mutate(perturbation_split = map(perturbation_split, \(x) {
+    if(all(x == "ctrl" | x == "")) "ctrl" 
+    else if(length(x) == 2) x
+    else c(x, "ctrl")
+  })) %>%
+  mutate(perturbation = map_chr(perturbation_split, paste0, collapse = "+")) %>%
+  tidylog::left_join(parameters, by = c("id", "name", "perturbation")) %>%  # Matches most of x. Non matches are from scGPT and are not in training
+  tidylog::filter(! is.na(train)) %>%
+  separate(name, sep = "-", into = c("dataset_name2", "seed2", "method"), convert = TRUE) %>%
+  tidylog::filter(dataset_name2 == dataset_name | seed2 == seed) %>%
+  dplyr::select(-c(dataset_name2, seed2)) %>%
+  filter(method != "lpm")
+
+res
+```
+
+
+```{r, paged.print=FALSE}
+baselines <- res %>%
+  filter(method == "ground_truth" & perturbation == "ctrl") %>%
+  dplyr::select(baseline = prediction, dataset_name, seed)
+```
+
+```{r, paged.print=FALSE}
+res <- bind_rows(res, res %>%
+  distinct(perturbation, perturbation_split, dataset_name, test_train_config_id, seed, train) %>%
+  inner_join(baselines %>% dplyr::rename(prediction = baseline), by = c("dataset_name", "seed")) %>%
+  mutate(method = "no_change"))
+```
+
+```{r}
+expr_rank_df <- res %>%
+  filter(method == "ground_truth" & perturbation == "ctrl") %>%
+  dplyr::select(dataset_name, seed, observed = prediction) %>%
+  mutate(gene_name = map(observed, names)) %>%
+  unnest(c(gene_name, observed)) %>%
+  mutate(expr_rank = rank(desc(observed), ties = "first"), .by = c(seed, dataset_name)) %>%
+  dplyr::select(dataset_name, seed, gene_name, expr_rank)
+```
+
+
+```{r, paged.print=FALSE}
+method_labels <- c("no_change" = "No Change", "additive_model" = "Additive",
+                   "scgpt" = "scGPT", "scfoundation" = "scFoundation",
+                   "uce" = "UCE*", "scbert" = "scBERT*", "geneformer" = "Geneformer*",
+                   "gears" = "GEARS", "cpa" = "CPA")
+
+all_predictions <- res %>%
+  filter(lengths(map(perturbation_split, \(x) setdiff(x, "ctrl"))) == 2) %>%
+  filter(method %in% c("ground_truth", names(method_labels))) %>%
+  dplyr::select(perturbation, method, seed, prediction, train) %>%
+  mutate(gene_name = map(prediction, names)) %>%
+  unnest(c(gene_name, prediction)) %>%
+  inner_join(expr_rank_df %>% dplyr::select(gene_name, seed, expr_rank) %>% filter(expr_rank <= 1000), by = c("gene_name", "seed"))
+
+
+norman_expression_variation_pl <- all_predictions |>
+  summarize(.by = c(gene_name, method, seed),
+            sd = sd(prediction)) |>
+  mutate(method = factor(method, levels = c("ground_truth", names(method_labels)))) |>
+  ggplot(aes(x = sd)) +
+    geom_histogram() +
+    geom_vline(data = . %>% filter(method == "ground_truth") %>% summarize(sd = mean(sd)), aes(xintercept = sd), color = "red") +
+    scale_x_continuous(transform = scales::pseudo_log_trans(sigma = 0.01), limits = c(-0.002, 1.6), 
+                       breaks = c(0, 0.02, 0.1, 0.5, 1.5), expand = expansion(mult = c(0, 0.1))) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, 5000)) +
+    facet_wrap(vars(method), labeller = as_labeller(c(ground_truth = "Ground Truth", method_labels)), scales = "free", nrow = 3) +
+    labs(x = "pseudo log of the expression Standard Deviation per Gene")
+
+norman_expression_variation_pl
+```
+
+#### Single
+
+
+```{r}
+pert_res <- bind_rows(readRDS("../benchmark/output/single_perturbation_results_predictions.RDS"))
+parameters <- readRDS(file.path("../benchmark/output/single_perturbation_results_parameters.RDS")) %>%
+  map(\(p) tibble(id = p$id, name = p$name, parameters = as_tibble(p$parameters), 
+                  train = names(p$test_train_labels), perturbation = p$test_train_labels)) %>%
+  bind_rows() %>%
+  unnest(perturbation) %>%
+  unpack(parameters)
+```
+
+
+
+```{r, paged.print=FALSE}
+res <- pert_res %>%
+  mutate(perturbation_split = str_split(perturbation, pattern = "[+_]", n = 2)) %>%
+  mutate(perturbation_split = map(perturbation_split, \(x) {
+    if(all(x == "ctrl" | x == "")) "ctrl" 
+    else if(length(x) == 2) x
+    else c(x, "ctrl")
+  })) %>%
+  mutate(perturbation = map_chr(perturbation_split, paste0, collapse = "+")) %>%
+  tidylog::left_join(parameters, by = c("id", "name", "perturbation")) %>%  # Matches most of x. Non matches are from scGPT and are not in training
+  tidylog::filter(! is.na(train)) %>%
+  separate(name, sep = "-", into = c("dataset_name2", "seed2", "method"), convert = TRUE) %>%
+  tidylog::filter(dataset_name2 == dataset_name | seed2 == seed) %>%
+  dplyr::select(-c(dataset_name2, seed2))
+
+expr_rank_df <- res %>%
+  filter(method == "ground_truth" & perturbation == "ctrl") %>%
+  dplyr::select(dataset_name, seed, observed = prediction) %>%
+  mutate(gene_name = map(observed, names)) %>%
+  unnest(c(gene_name, observed)) %>%
+  mutate(expr_rank = rank(desc(observed), ties = "first"), .by = c(seed, dataset_name)) %>%
+  dplyr::select(dataset_name, seed, gene_name, expr_rank)
+```
+
+```{r, paged.print=FALSE}
+main_methods <- c("uce", "scgpt", "lpm_selftrained", "scbert", "geneformer", "mean", "ground_truth", "gears", "cpa")
+method_labels <- c("mean" = "Mean",
+                   "lpm_selftrained" = "LM based on training",
+                   "scgpt" = "scGPT", "scfoundation" = "scFoundation", 
+                   "uce" = "UCE*", "scbert" = "scBERT*",  "geneformer" = "Geneformer*",
+                   "gears" = "GEARS",
+                   "lpm_scFoundationGeneEmb" = "LM with $\\matr{G}$ from scFoundation",
+                   "lpm_scgptGeneEmb" = "LM with $\\matr{G}$ from scGPT",
+                   "lpm_randomGeneEmb" = "LM with random $\\matr{G}$",
+                   "lpm_k562PertEmb" = "LM with $\\matr{P}$ from K562 Replogle",
+                   "lpm_rpe1PertEmb" = "LM with $\\matr{P}$ from RPE1 Replogle",
+                   "lpm_gearsPertEmb" = "LM with $\\matr{P}$ from GEARS",
+                   "lpm_randomPertEmb" = "LM with random $\\matr{P}$")
+
+all_predictions <- res %>%
+  filter(dataset_name == "replogle_k562_essential") |>
+  filter(train != "train") |>
+  filter(method %in% c("ground_truth", main_methods, "lpm_rpe1PertEmb")) %>%
+  filter(method != "cpa") |>
+  dplyr::select(dataset_name, perturbation, method, seed, prediction, train) %>%
+  mutate(gene_name = map(prediction, names)) %>%
+  unnest(c(gene_name, prediction)) %>%
+  inner_join(expr_rank_df %>% dplyr::select(dataset_name, gene_name, seed, expr_rank) %>% filter(expr_rank <= 1000), by = c("dataset_name", "gene_name", "seed"))
+
+
+
+replogle_expression_variation_pl <- all_predictions |>
+  summarize(.by = c(dataset_name, gene_name, method, seed),
+            sd = sd(prediction, na.rm=TRUE)) |>
+  mutate(method = factor(method, levels = c("ground_truth", names(method_labels)))) |>
+  ggplot(aes(x = sd)) +
+    geom_histogram() +
+    geom_vline(data = . %>% filter(method == "ground_truth") %>% summarize(sd = mean(sd)), aes(xintercept = sd), color = "red") +
+    scale_x_continuous(transform = scales::pseudo_log_trans(sigma = 0.01), limits = c(-0.002, 1.6),
+                       breaks = c(0, 0.02, 0.1, 0.5, 1.5), expand = expansion(mult = c(0, 0.1))) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, 2000)) +
+    facet_wrap(vars(method), labeller = labeller(method=as_labeller(c(ground_truth = "Ground Truth", method_labels))),
+               scales = "free", ncol = 4) +
+    labs(x = "pseudo log of the expression Standard Deviation per Gene")
+
+replogle_expression_variation_pl
+```
+
+```{r}
+plot_assemble(
+  add_text("(A) Variation of predictions across double perturbations for Norman", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(norman_expression_variation_pl, x = 0, y = 4, width = 180, height = 80),
+  
+  add_text("(B) Variation of predictions across unseen perturbations for Replogle K562", x = 2.7, y = 86, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(replogle_expression_variation_pl, x = 0, y = 90, width = 180, height = 80),
+
+
+  width = 180, height = 170, units = "mm", show_grid_lines = FALSE,
+  latex_support = TRUE, filename = "../plots/suppl-prediction_variation.pdf"
 )
 ```
 

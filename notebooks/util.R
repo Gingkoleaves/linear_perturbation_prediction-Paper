@@ -41,7 +41,9 @@ options(tikzLatexPackages = union(
     "\\usepackage{amssymb}",
     "\\usepackage{amsmath}", 
     "\\usepackage{bm}",
-    "\\usepackage{graphicx}"
+    "\\usepackage{graphicx}",
+    "\\usepackage{tabularray}",
+    "\\UseTblrLibrary{booktabs}"
   ))
 )
 
