@@ -205,14 +205,14 @@ main_pl_double_l2 <- main_pl_data %>%
   ggplot(aes(x = label, y = l2)) +
     geom_hline(yintercept = 0, color = "black", linewidth = 0.2) +
     ggbeeswarm::geom_quasirandom(aes(color = highlight, size = highlight)) +
-      geom_hline(data = . %>% summarize(l2_best = mean(l2), .by = method) %>% slice_min(l2_best, n = 1, with_ties = FALSE),
+    geom_hline(data = . %>% summarize(l2_best = mean(l2), .by = method) %>% slice_min(l2_best, n = 1, with_ties = FALSE),
                  aes(yintercept = l2_best), color = "grey", linetype = "dashed") +
     ungeviz::geom_hpline(data = . %>% summarize(l2 = mean(l2), .by = c(approach, label)), aes(y = l2), 
                          color = "red", width = 0.6, linewidth = 0.6) +
     ggbezier::geom_bezier(data = tibble(approach = factor("baseline",  levels(main_pl_data$approach)), x = c(1, 1.5), y = c(8.5, 10)),
                           aes(x = x, y = y, angle = c(0, 90)), arrow = grid::arrow(type = "closed", ends = "first", length = unit(1, "mm"))) +
-    # geom_text(data = tibble(x = 1.5, y = 10.1, text = "CEBPE+CEBPB", approach = factor("baseline",  levels(main_pl_data$approach))),
-    #                         aes(x=x, y=y, label=text), hjust = 0.2, vjust = 0, size = font_size_tiny / .pt) +
+    geom_text(data = tibble(x = 1.5, y = 10.1, text = "CEBPE+CEBPB", approach = factor("baseline",  levels(main_pl_data$approach))),
+                            aes(x=x, y=y, label=text), hjust = 0.2, vjust = 0, size = font_size_tiny / .pt) +
     ggforce::facet_row(vars(approach), scales = "free_x", space = "free", labeller = as_labeller(approach_labels)) +
     scale_x_discrete(expand = expansion(add = 0.7)) +
     scale_y_continuous(limits = c(0, 12.5), expand = expansion(add = c(0, 0.5))) +
