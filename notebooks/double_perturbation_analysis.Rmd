@@ -251,7 +251,7 @@ obs_pred_corr_pl <- contr_res %>%
     geom_abline(linewidth = 0.2, linetype = "dashed") +
     ggrastr::rasterize(geom_point(size = 0.5, stroke = 0), dpi = 600) +
     annotate("rect", xmin = -0.95, ymin = 0.5, xmax = 0.3, ymax = Inf, fill = "white", alpha = 0.8) +
-    geom_text(data = . %>% summarize(l2 = first(l2), .by = c(method, perturbation, approach)), aes(label = paste0("error: ", round(l2, 1))),
+    geom_text(data = . %>% summarize(l2 = first(l2), .by = c(method, perturbation, approach)), aes(label = paste0("$L_2$: ", round(l2, 1))),
               x = -0.95, y = Inf, hjust = 0, vjust = 1.2, size = font_size_tiny / .pt) +
     geom_text(data = . %>% summarize(r2_delta = first(r2_delta), .by = c(method, perturbation, approach)), 
               aes(label = paste0("$R^2$: ", round(r2_delta, 2))),
@@ -264,7 +264,7 @@ obs_pred_corr_pl <- contr_res %>%
                nrow  = 3, # ncol = 2, 
                              labeller = labeller(approach = as_labeller(approach_labels), method = as_labeller(method_labels)),
                              strip = ggh4x::strip_nested(clip = "off")) +
-    labs(x = "observed expression minus control", y = "predicted expression minus control")
+    labs(x = "Observed LFC over control", y = "Predicted LFC over control")
 
 obs_pred_corr_pl
 ```
@@ -384,13 +384,13 @@ ground_truth_df <- res %>%
   inner_join(all_combs, by = c("perturbation_split" = "combs"), relationship = "many-to-many") %>% 
   unnest_named_lists(ground_truth, names_to = "gene_name") %>%
   pivot_wider(id_cols = c(gene_name, pert_group, seed), names_from = labels, values_from = ground_truth) %>%
-  mutate(error = `AB` - (A + B - ctrl)) %>%
-  mutate(error_clever = broom::augment(lm(`AB` - ctrl ~ I(A - ctrl + B - ctrl) - 1))$.resid, .by = pert_group)
+  mutate(error = `AB` - (A + B - ctrl))
 ```
 
 
 ```{r, paged.print=FALSE}
 filter_gt_df <- ground_truth_df %>%
+  filter(seed == 1) |>
   inner_join(expr_rank_df %>% dplyr::select(gene_name, seed, rank = expr_rank) %>% filter(rank <= 1000) , by = c("gene_name", "seed")) 
 ```
 
@@ -452,7 +452,7 @@ qq_pl <- filter_gt_df %>%
     annotate_labels_along(dir = c(1, sd_est), at = 4.5, labels = "Percentile", offset = 0.15, size = font_size_small / .pt) +
     ggrastr::rasterize(geom_point(size = 0.3, stroke = 0), dpi = 300) +
     coord_fixed() +
-    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the observed\ndifferencefrom additive expectation")
+    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the observed\nLFC over additive expectation")
 qq_pl
 ```
 
@@ -508,7 +508,7 @@ error_histogram <- dens_ratio_df %>%
     scale_fill_manual(values = c("h0" = "lightgrey", "h1" = "black")) +
     scale_x_continuous(limits = c(-0.45, 0.45)) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-    labs(y = "density", x = "Difference from additive expectation")
+    labs(y = "density", x = "Observed LFC over additive expectation")
 
 error_histogram
 ```
@@ -541,7 +541,7 @@ filter_gt_df %>%
 
 
 ```{r, paged.print=FALSE}
-non_additive_colors <- c("Additive" = "lightgrey", "Other non-additive" = "#767676", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", 
+non_additive_colors <- c("Additive" = "lightgrey", "Other" = "#767676", "Non-additive" = "#00BA38", "Synergy" = "#fdc086", 
                          "Buffering" = "#beaed4", "Cryptic" = colorspace::darken("#f0027f", 0.5))
 
 
@@ -557,21 +557,24 @@ gene_response_label_df_intermed <- ground_truth_df |>
     pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres & AB > ctrl ~ "Cryptic",
     pert_same_dir & ctrl < (A+B-ctrl) & AB - (A + B - ctrl) < lower_thres ~ "Buffering",
     pert_same_dir & ctrl > (A+B-ctrl) & AB - (A + B - ctrl) > upper_thres ~ "Buffering",
-     AB - (A + B - ctrl) > upper_thres |  AB - (A + B - ctrl) < lower_thres ~ "Other non-additive",
+     AB - (A + B - ctrl) > upper_thres |  AB - (A + B - ctrl) < lower_thres ~ "Other",
     .default = "Additive"
   )) 
 
 
 gene_response_label_df <- gene_response_label_df_intermed |>
-  mutate(label = factor(label, levels = c("Additive", "Other non-additive", "Buffering", "Synergy", "Cryptic")))
+  mutate(label = factor(label, levels = c("Additive", "Other", "Buffering", "Synergy", "Cryptic")))
 ```
 
 
 ```{r, paged.print=FALSE}
 non_additive_counts <- gene_response_label_df %>%
+  filter(seed == 1) |>
   dplyr::count(label) %>%
   mutate(frac = n / sum(n)) |>
   mutate(is_additive = ifelse(label == "Additive", "Additive", "Non-additive"))
+
+print(non_additive_counts)
 
 perc_additive <- filter(non_additive_counts, label == "Additive")$frac
 
@@ -658,26 +661,29 @@ pert_pred_comparison_df %>%
   print(n = 50)
 
 pert_pred_comparison <- pert_pred_comparison_df %>%
-  mutate(pred_minus_add = clamp(pred_minus_add, max = 1.2)) %>%
+  mutate(most_non_additive = rank(desc(abs(pred_minus_add))) <= 500, .by = c(method)) |>
+  mutate(pred_minus_add = clamp(pred_minus_add, max = 1.37)) |>
   arrange(interaction_label) |>
   ggplot(aes(x = obs_minus_add, y = pred_minus_add)) +
     # geom_point(data = tibble(interaction_label = "Below baseline"), aes(x= 0, y = 0, color = interaction_label), stroke = 0, size = 0) +
-    ggrastr::rasterize(geom_point(aes(color = interaction_label), size = 0.2, stroke = 0), dpi = 600) +
+    ggrastr::rasterize(geom_point(aes(color = interaction_label, alpha = most_non_additive, size = most_non_additive), stroke = 0), dpi = 600) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.3) +
     geom_vline(xintercept = c(lower_thres, upper_thres), linewidth = 0.2) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(-0.8, 0, 0.8)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(-1, 0, 1)) +
     scale_color_manual(values = non_additive_colors, 
-                       labels = c("Additive", "Other non-additive" = "Other non-add.", "Buffering", "Synergy", "Cryptic"), drop = TRUE) +
-    ggh4x::facet_nested_wrap(vars(approach, method), ncol = 5,
+                       labels = c("Additive", "Other", "Buffering", "Synergy", "Cryptic"), drop = TRUE) +
+    scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.1)) +
+    scale_size_manual(values = c("TRUE" = 0.6, "FALSE" = 0.1)) +
+    ggh4x::facet_nested_wrap(vars(approach, method), nrow = 1,
                              labeller = labeller(approach = as_labeller(approach_labels), 
                                                  method = as_labeller(method_labels)),
                              nest_line = TRUE, strip = ggh4x::strip_nested(clip = "off")) +
-    coord_fixed(xlim = c(-1, 1), ylim = c(-1.2, 1.2)) +
-    labs(x = "Observed expression minus additive expectation", 
-       y = "Predicted expression minus additive expectation", 
+    coord_fixed(xlim = c(-1, 1), ylim = c(-1.4, 1.4)) +
+    labs(x = "Observed LFC over additive expectation", 
+       y = "Predicted LFC over\nadditive expectation", 
        color = "") +
-    guides(color = guide_legend(override.aes = list(size = 2))) +
+    guides(color = guide_legend(override.aes = list(size = 2)), alpha = "none", size = "none") +
     theme(panel.spacing.x = unit(2, "mm"), legend.position = "bottom")
 pert_pred_comparison
 ```
@@ -760,8 +766,7 @@ tp_fdp_pl
 
 ```{r, paged.print=FALSE}
 prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
-  filter(seed == 1) |>
-  slice_head(n = 500, by = c(method)) |>
+  slice_max(n = 500, order_by = abs(pred_minus_add), by = c(method)) |>
   mutate(prediction_label = case_when(
     baseline < ref & ref > value & value >= baseline ~ "buf",
     baseline > ref & ref < value & value <= baseline ~ "buf",
@@ -774,42 +779,29 @@ prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
   count(method, interaction_label, prediction_label) |>
   complete(method, prediction_label, interaction_label, fill = list(n = 0)) |>
   summarize(n = median(n), .by = c(method, prediction_label, interaction_label)) |>
-  mutate(frac = n / sum(n), .by = c(prediction_label, method)) |>
-  filter(method != "additive_model") 
+  mutate(frac = n / sum(n), .by = c(prediction_label, method)) 
 
 
 prediction_label_vs_true_df |> filter(method =="geneformer" & prediction_label == "buf")
 
-label_text <- str_trim("
-377 of the top 500 predictions that 
-differed most from the add.\\ baseline,
-were predicted to be buffering, but
-only 45\\% of actually were (purple bar).
-")
-
 mosaic_plot <- prediction_label_vs_true_df |>
   mutate(marginal_n = sum(n), .by = c(method, prediction_label)) |>
   mutate(marginal_frac = marginal_n / sum(marginal_n), .by = c(method, interaction_label)) |>
-  mutate(interaction_label = fct_relevel(interaction_label, "Other non-additive", "Additive", "Buffering", "Synergy")) |>
+  mutate(interaction_label = fct_relevel(interaction_label, "Other", "Additive", "Buffering", "Synergy")) |>
   ggplot(aes(x = frac, y = prediction_label)) + 
     geom_col(aes(fill = interaction_label, width = ifelse(marginal_frac == 0, 0, pmax(0.1, 1.5 * marginal_frac)))) +
-    shadowtext::geom_shadowtext(data = . %>% distinct(method, prediction_label, marginal_n), 
+    shadowtext::geom_shadowtext(data = . %>% distinct(method, prediction_label, marginal_n),
               aes(label = paste0("n=", scales::label_comma()(round(marginal_n))),
-                  # x = ifelse(marginal_n == 0, 0, Inf), hjust = ifelse(marginal_n == 0, 0, 0)), 
+                  # x = ifelse(marginal_n == 0, 0, Inf), hjust = ifelse(marginal_n == 0, 0, 0)),
                   x = 0.02, hjust = 0), color = "black", bg.colour = "white",
               vjust = 0.5, size = font_size_tiny / .pt, nudge_x = 0.01) +
-    ggbezier::geom_bezier(data = tibble(method = factor("geneformer", levels = names(method_labels)), x = c(1, 1.2), y = c(1.8, -1.55)),
-                          aes(x = x, y = y, angle = c(-75, 270), handle_length = c(2, 1.5)), arrow = grid::arrow(type = "closed", ends = "first", length = unit(1, "mm")),
-                          show_handles = FALSE) +
-    geom_text(data =tibble(method = factor("geneformer", levels = names(method_labels)), x = c(1.3), y = c(-1.6)), aes(x=x, y=y, label=label_text), hjust = 1, vjust = 1,
-              size = font_size_tiny / .pt) +
-    scale_x_continuous(labels = \(x) paste0(x * 100, "\\%"), expand = expansion(add = 0), position = "bottom") +
-    scale_y_discrete(labels = c(buf = "Buffering prediction", syn = "Synergy prediction", anti = "Cryptic prediction"), expand = expansion(add = c(0.4, 0.2))) +
+    scale_x_continuous(labels = \(x) paste0(x * 100, "\\%"), breaks = c(0, 0.5, 1), expand = expansion(add = 0), position = "bottom") +
+    scale_y_discrete(labels = c(buf = "Buffering", syn = "Synergy", anti = "Opposite")) +
     scale_fill_manual(values = non_additive_colors) +
-    facet_wrap(vars(method), labeller = labeller(method = as_labeller(method_labels)), nrow = 3, scales = "fixed") +
-    labs(y = "", x = "Proportion of true interaction class") +
+    facet_wrap(vars(method), labeller = labeller(method = as_labeller(method_labels)), nrow = 1, scales = "fixed") +
+    labs(y = "Prediction class", x = "Proportion of observed interaction classes") +
     guides(fill = "none") +
-    coord_cartesian(ylim = c(0.5, 3.5), xlim = c(0,1), clip = "off") +
+    coord_cartesian(ylim = c(0.4, 3.2), xlim = c(0,1), clip = "off", expand = FALSE) +
     theme(panel.spacing.x = unit(5, "mm"), panel.spacing.y = unit(1.5, "mm"),
           strip.text = element_text(margin = margin(2,2,b=0, 2, "pt"))
           )
@@ -893,71 +885,159 @@ plot_assemble(
 
 
 
-Make cartoon of prediction types
-
 ```{r, paged.print=FALSE}
-height_spec <- tibble(ctrl = 0.3, Ad = 0.1, Bd = 0.15, 
-                 add_low = 0.1, add_low2 = add_low, add_up = add_low, add_up2 = add_up,
-                 buffer_low = (Ad + Bd) - add_low, 
-                 anti = (ctrl + Ad + Bd) - add_low - buffer_low, syn = 0.2) |>
-  as.matrix() |> drop()
-bar_df <- tibble(bar = c("ctrl", "A", "A", "B", "B", "Add", "Add", "Add", 
-                         rep("obs", 5)),
-       part = c("ctrl", "ctrl", "Ad", "ctrl", "Bd", "ctrl", "Ad", "Bd", 
-                "anti", "add_low", "add_up", "buffer_low", "syn")) |>
-  mutate(height = height_spec[part])
+cartoon_color_values <- as.character(wesanderson::wes_palette("FrenchDispatch", n = 3)[c(3,2,1)]) |>
+  magrittr::set_names(c("ctrl", "Ad", "Bd"))
 
-cartoon_color_values <-  c(ctrl = "#f0027f", Ad = "#bf5b17", Bd = "#ffff99",
-                          anti = colorspace::darken("#f0027f", 0.5), 
-                          add_low2 = unname(non_additive_colors["Buffering"]), buffer_low = unname(non_additive_colors["Buffering"]),
-                          add_low = unname(non_additive_colors["Additive"]), add_up = unname(non_additive_colors["Additive"]),
-                          add_up2 = unname(non_additive_colors["Synergy"]), syn = unname(non_additive_colors["Synergy"]))
+height_spec <- c(ctrl = 0.4, Ad = 0.1, Bd = 0.15)
 
-cartoon_plot <-bar_df |>
-  mutate(bar = factor(bar, c("ctrl", "A", "B", "Add", "obs"))) |>
-  mutate(part = factor(part, c( "Bd", "Ad", "ctrl", "syn", "add_up","add_up2", "add_low","add_low2", "buffer_low", "anti"))) |>
-  rowwise() |>
-  mutate(height = ifelse(part %in% c("syn", "anti"), list(rep_len(height / 100, length.out = 100)), list(height)),
-         alpha = case_when(
-           part == "syn" ~ list(c(seq(1, 0, length.out = 70)^2, rep(0, 30))), 
-           part == "anti" ~ list(c(rep(0, 30), seq(0, 1, length.out = 70)^2)), 
-           .default = list(1)
-  )) |>
-  ungroup() |>
-  unnest(c(height, alpha)) |>
+  
+training_df <- tibble(bar = c("ctrl", "A", "A", "B", "B"),
+       part = c("ctrl", "ctrl", "Ad", "ctrl", "Bd")) |>
+   mutate(height = height_spec[part])
+
+train_plot <- training_df |>
+  mutate(bar = factor(bar, c("ctrl", "A", "B"))) |>
+  mutate(part = factor(part, c( "Bd", "Ad", "ctrl"))) |>
   arrange(bar, desc(part)) |>
   mutate(start_pos = cumsum(lag(height, default = 0)),
          end_pos = cumsum(height),
          .by = bar) |>
   ggplot(aes(x = bar, y = height)) +
-    geom_blank() +
-    geom_col(data = . %>% filter(bar == "obs"), aes(fill = part, alpha = alpha), width = 0.8) +
-    geom_col(data = . %>% filter(bar %in% c("ctrl", "A", "B")), aes(fill = part), width = 0.5) +
-    geom_col(data = . %>% filter(bar == "Add") %>% summarize(height = sum(height), .by = bar), alpha = 1, fill = "#2e2e2e", width = 0.5) +
-    geom_segment(data = . %>% filter(bar == "Add"), aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
-                 arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
-    annotate("segment", x = "Add", xend = Inf, y = 0.55, color = "grey", linetype = "dashed") +
-    annotate("text", x = "obs", y = 0.15, label = "Cryptic", size = font_size_tiny / .pt, color = "black") +
-    annotate("text", x = "obs", y = 0.375, label = "Buffering", size = font_size_tiny / .pt, color = "black") +
-    annotate("text", x = "obs", y = 0.55, label = "Additive", size = font_size_tiny / .pt, color = "black") +
-    annotate("text", x = "obs", y = 0.75, label = "Synergy", size = font_size_tiny / .pt, color = "black") +
-    scale_y_continuous(expand = expansion(add = 0), 
-                       sec.axis = sec_axis(transform = \(x) x - 0.55, name = "Difference from additive expectation", breaks = c(0))) +
-    scale_x_discrete(labels = c(ctrl = "No Perturbation", A = "Perturbation A", B = "Perturbation B",
-                                Add = "Addition of\nPerturbation A + B", obs = "Observed expression\nPerturbation A + B")) +
+    geom_col(aes(fill = part), width = 0.5) +
+    scale_y_continuous(expand = expansion(add = 0)) +
+    scale_x_discrete(labels = c(ctrl = "No Perturbation", A = "Perturbation A", B = "Perturbation B")) +
     scale_fill_manual(values = cartoon_color_values) +
     scale_color_manual(values = cartoon_color_values) +
-    scale_alpha(range = c(0, 1)) +
     coord_cartesian(ylim = c(0, 0.8), clip = "off") +
     guides(color = "none", fill = "none", alpha = "none",
            x = guide_axis(angle = 90)) +
-    labs(y = "Expression of a single gene") +
-    theme(axis.title.x = element_blank(),
+    labs(y = "Log Expression of a single gene",
+         subtitle = "Training data") +
+    theme(axis.title = element_blank(),
           axis.ticks.y.left = element_blank(),
           axis.text.y.left = element_blank())
 
-cartoon_plot
+categories_df <- tibble(add = sum(height_spec),
+                        syn = add + 0.1,
+                        buf = add - 0.12,
+                        opp = height_spec["ctrl"] - 0.1) |>
+  pivot_longer(everything(), names_to = "class", values_to = "height") |>
+  mutate(class = factor(class, levels = c("add", "buf", "syn", "opp")))
+
+arrow_df <- enframe(height_spec, name = "part", value = "height") |>
+  mutate(start_pos = cumsum(lag(height, default = 0)),
+           end_pos = cumsum(height)) |>
+  mutate(class = list(categories_df$class)) |>
+  unnest(class)
+
+sum_height_spec1 <-  sum(height_spec)
+obs_plot <- categories_df |>
+  ggplot(aes(x = class, y = height)) +
+    geom_col(fill = "#5e5e5e", width = 0.5) +
+    annotate(geom = "errorbar", x = "add", ymin = sum_height_spec1 - 0.05, ymax = sum_height_spec1 + 0.05, width = 0.3) +
+    geom_segment(data = arrow_df, aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
+                 arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+    scale_y_continuous(expand = expansion(add = 0), 
+                       sec.axis = sec_axis(transform = \(x) x - sum_height_spec1, 
+                                           name = "LFC over additive expectation", breaks = c(0))) +
+    scale_x_discrete(labels = c(add = "Additive\n(Non-interaction)", buf = "Buffering", syn = "Synergy", opp = "Opposite")) +
+    scale_fill_manual(values = cartoon_color_values) +
+    scale_color_manual(values = cartoon_color_values) +
+    coord_cartesian(ylim = c(0, 0.8), clip = "off") +
+    guides(color = "none", fill = "none", alpha = "none",
+           x = guide_axis(angle = 90)) +
+    labs(subtitle = "Observed / Predicted Interaction\nClass of Perturbation A+B") +
+    theme(axis.title = element_blank(),
+          axis.ticks.y.left = element_blank(),
+          axis.text.y.left = element_blank(),
+          axis.line.y.left = element_blank())
+
+cowplot::plot_grid(train_plot, obs_plot, align = "h")
 ```
+
+```{r, paged.print=FALSE}
+height_spec <- c(ctrl = 0.4, Ad = -0.1, Bd = -0.15)
+
+  
+training_df <- tibble(bar = c("ctrl", "A", "A", "B", "B"),
+       part = c("ctrl", "ctrl", "Ad", "ctrl", "Bd")) |>
+  mutate(height = height_spec[part]) |>
+  mutate(bar = factor(bar, c("ctrl", "A", "B"))) |>
+  mutate(part = factor(part, c( "Bd", "Ad", "ctrl"))) |>
+  arrange(bar, desc(part)) |>
+  mutate(start_pos = cumsum(lag(height, default = 0)),
+         end_pos = cumsum(height),
+         .by = bar)
+
+train_plot2 <- training_df |>
+ mutate(end_pos = min(end_pos), .by = bar) |>
+  ggplot(aes(x = bar)) +
+    geom_tile(aes(fill = part, alpha = part, y = (start_pos + end_pos) / 2, height = abs(end_pos - start_pos)), width = 0.5) +
+    annotate("segment", x = "A", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Ad"], color = cartoon_color_values["Ad"],
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+    annotate("segment", x = "B", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Bd"], color = cartoon_color_values["Bd"],
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+    scale_y_continuous(expand = expansion(add = 0)) +
+    scale_x_discrete(labels = c(ctrl = "No Perturbation", A = "Perturbation A", B = "Perturbation B")) +
+    scale_fill_manual(values = cartoon_color_values) +
+    scale_color_manual(values = cartoon_color_values) +
+    scale_alpha_manual(values = c(ctrl = 1, Ad = 0.2, Bd = 0.2)) +
+    coord_cartesian(ylim = c(0, 0.5), clip = "off") +
+    guides(color = "none", fill = "none", alpha = "none",
+           x = guide_axis(angle = 90)) +
+        labs(y = "Log Expression of a single gene") +
+    theme(axis.title = element_blank(),
+          axis.ticks.y.left = element_blank(),
+          axis.text.y.left = element_blank())
+
+categories_df <- tibble(add = sum(height_spec),
+                        syn = add - 0.1,
+                        buf = add + 0.12,
+                        opp = height_spec["ctrl"] + 0.03) |>
+  pivot_longer(everything(), names_to = "class", values_to = "height") |>
+  mutate(class = factor(class, levels = c("add", "buf", "syn", "opp")))
+
+arrow_df <- enframe(height_spec, name = "part", value = "height") |>
+  mutate(start_pos = cumsum(lag(height, default = 0)),
+           end_pos = cumsum(height)) |>
+  mutate(class = list(categories_df$class)) |>
+  unnest(class)
+
+sum_height_spec2 <-  sum(height_spec)
+obs_plot2 <- categories_df |>
+  ggplot(aes(x = class, y = height)) +
+    geom_col(fill = "#5e5e5e", width = 0.5) +
+    annotate(geom = "errorbar", x = "add", ymin = sum_height_spec2 - 0.05, ymax = sum_height_spec2 + 0.05, width = 0.3) +
+    geom_segment(data = arrow_df %>% filter(part != "ctrl"), aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
+                 arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+    scale_y_continuous(expand = expansion(add = 0), 
+                       sec.axis = sec_axis(transform = \(x) x - sum_height_spec2, 
+                                           name = "LFC over additive expectation", breaks = c(0))) +
+    scale_x_discrete(labels = c(add = "Additive\n(Non-interaction)", buf = "Buffering", syn = "Synergy", opp = "Opposite")) +
+    scale_fill_manual(values = cartoon_color_values) +
+    scale_color_manual(values = cartoon_color_values) +
+    coord_cartesian(ylim = c(0, 0.5), clip = "off") +
+    guides(color = "none", fill = "none", alpha = "none",
+           x = guide_axis(angle = 90)) +
+    theme(axis.title = element_blank(),
+          axis.ticks.y.left = element_blank(),
+          axis.text.y.left = element_blank(),
+          axis.line.y.left = element_blank())
+
+cowplot::plot_grid(train_plot2, obs_plot2, align = "h")
+```
+
+```{r}
+cartoon_pl <- cowplot::plot_grid(
+  cowplot::plot_grid(train_plot + theme(axis.text.x = element_blank()), obs_plot + theme(axis.text.x = element_blank()), rel_widths = c(3, 4), align = "h"),
+  cowplot::plot_grid(train_plot2, obs_plot2, rel_widths = c(3, 4), align = "h"),
+  ncol = 1, rel_heights = c(1, 1.5), align = "v"
+)
+cartoon_pl
+```
+
+
 
 
 ```{r}
@@ -968,28 +1048,27 @@ plot_assemble(
   add_text("(B) Example:\\;{\\scriptsize\\textcolor{baseROrange}\\faCircle}\\;CEBPE+CEBPB", x = 128, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(obs_pred_corr_pl, x = 125, y = 4, width = 58, height = 60),
 
-  add_text("(C) Classification of\n\\;\\;interactions", x = 2.7, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(cartoon_plot, x = 1, y = 76, width = 40, height = 50),
+  add_text("(C) Accuracy of interaction predictions", x = 2.7, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(tp_fdp_pl, x = 0, y = 70, width = 60, height = 58),
   
-  add_text("(D) True composition\nof interaction classes", x = 43, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(non_add_pl1, x = 42, y = 76, width = 20, height = 45),
-  add_plot(grid::polygonGrob(x = c(0.392, 0.71, 0.71, 0.392), y = c(0.965, 0.965, 0.05, 0.93),
+  add_text("(D) Classification of interactions", x = 62.7, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(cartoon_pl, x = 65, y = 70, width = 65, height = 60),
+  add_text("Log Expression of a two example genes", x = 64.5, y = 93, angle = 90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
+  add_text("LFC over additive expectation", x = 130, y = 93, angle = -90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
+  
+  add_text("(E) Observed composition\nof interaction classes", x = 141, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(non_add_pl1, x = 139, y = 76, width = 20, height = 45),
+  add_plot(grid::polygonGrob(x = c(0.398, 0.65, 0.65, 0.398), y = c(0.969, 0.969, 0.05, 0.927),
                             gp = grid::gpar(fill = non_additive_colors["Non-additive"], alpha = 0.2, lty = 0)),
-          x = 42, y = 76, width = 40, heigh = 45),
-  add_plot(non_add_pl2, x = 62, y = 76, width = 20, height = 45),
-  
-  add_text("(E) Prediction of non-additive perturbation effects", x = 85, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(pert_pred_comparison + guides(color = "none"), x = 84, y = 68, width = 95, height = 62),
-  add_plot(my_get_legend(pert_pred_comparison + theme(legend.position = "right")), x = 162.5, y = 99, width = 17, height = 23),
-  
-  add_text("(F) Accuracy of non-additive predictions", x = 2.7, y = 134, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(tp_fdp_pl, x = 0, y = 142, width = 60, height = 58),
-  
-  add_text("(G) Comparison of predicted vs.\\ true perturbation classes", x = 63, y = 134, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_text("Selection of the $500$ most non-additive predictions for each method.", x = 63, y = 138, fontsize = font_size_small, vjust = 1),
-  add_plot(mosaic_plot, x = 63, y = 140, width = 110, height = 60),
+          x = 140, y = 76, width = 37, heigh = 45),
+  add_plot(non_add_pl2, x = 156, y = 76, width = 20, height = 45),
 
-  width = 180, height = 200, units = "mm", show_grid_lines = FALSE,
+  add_text("(F) Prediction of LFC over additive expectation and interaction class", x = 2.7, y = 131.5, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(pert_pred_comparison + guides(color = "none"), x = 4, y = 135, width = 176, height = 40),
+  add_plot(mosaic_plot + theme(strip.text = element_blank(), axis.text.x = element_text(size = font_size_tiny)), x = 0, y = 173, width = 180, height = 20),
+  add_plot(my_get_legend(pert_pred_comparison), x = 125, y = 131.5, width = 50, height = 5),
+
+  width = 180, height = 193, units = "mm", show_grid_lines = FALSE,
   latex_support = TRUE, filename = "../plots/perturbation_prediction.pdf"
 )
 ```
@@ -1045,8 +1124,8 @@ cat(shared_deep_learning_exclusives_tab)
 
 ```{r}
 plot_assemble(
-  add_text("(A) Overlap of non-additive interaction calls", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
-  add_plot(upset_plot_pred_overlap + labs(subtitle="Overlap of non-additive interactions where at least 3 DL tools agree and \\emph{no change} does not (blue bars)"),
+  add_text("(A) Overlap of interaction predictions", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_plot(upset_plot_pred_overlap + labs(subtitle="Set of predictions where at least 3 DL tools predict an interaction and \\emph{no change} does not (blue bars)"),
            x = 0, y = 4.5, width = 110, height = 60),
   
   add_text("(B) Deep Learning interactions not\n\\;\\;found by \\emph{no change}", x = 120, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
@@ -1148,10 +1227,10 @@ top_perturbation_reoccurence %>%
 
 ```{r}
 plot_assemble(
-  add_text("(A) Reoccuring genes amont top 100 non-additive interaction predictions", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(A) Reoccuring genes among top 100 interaction predictions", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(top_gene_reoccurence_plot, x = 0, y = 4, width = 180, height = 65),
   
-  add_text("(B) Reoccuring perturbations amont top 100 non-additive interaction predictions", x = 2.7, y = 70, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(B) Reoccuring perturbations among top 100 interaction predictions", x = 2.7, y = 70, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(top_perturbation_reoccurence_plot, x = 0, y = 73, width = 180, height = 65),
 
   width = 180, height = 140, units = "mm", show_grid_lines = FALSE,
