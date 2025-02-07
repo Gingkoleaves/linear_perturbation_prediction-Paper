@@ -142,6 +142,10 @@ dataset_umaps <- tibble(dataset = names(dataset_labels),
 dataset_umaps
 ```
 
+```{r}
+filter(dat, perturbation != "ctrl")$dataset |> table()
+```
+
 
 ```{r}
 dataset_table <- str_trim(r"(
@@ -150,8 +154,8 @@ dataset_table <- str_trim(r"(
 	Dataset (cell line) & Size (Genes $\times$ Cells) & Perturbations\\
 	\hline
 	Norman (K562) & $19\,264\times 84\,143$ & $124$ double and $100$ single perturbations\\
-	Replogle (K562) & $5\,000 \times 162\,264$ & $1\,088$ single perturbations \\
-	Replogle (RPE1) & $5\,000 \times 161\,423$ & $1\,535$ single perturbations \\
+	Replogle (K562) & $5\,000 \times 162\,264$ & $1\,087$ single perturbations \\
+	Replogle (RPE1) & $5\,000 \times 161\,423$ & $1\,534$ single perturbations \\
 	Adamson (K562) & $5\,060 \times 65\,899$ & $81$ single perturbations\\
 	\hline\hline\\
 \end{tabular}
@@ -248,7 +252,7 @@ method_labels <- c("no_change" = "No Change", "additive_model" = "Additive",
                    "uce" = "UCE*", "scbert" = "scBERT*", "geneformer" = "Geneformer*",
                    "gears" = "GEARS", "cpa" = "CPA")
 
-all_predictions <- res %>%
+double_predictions <- res %>%
   filter(lengths(map(perturbation_split, \(x) setdiff(x, "ctrl"))) == 2) %>%
   filter(method %in% c("ground_truth", names(method_labels))) %>%
   dplyr::select(perturbation, method, seed, prediction, train) %>%
@@ -257,7 +261,7 @@ all_predictions <- res %>%
   inner_join(expr_rank_df %>% dplyr::select(gene_name, seed, expr_rank) %>% filter(expr_rank <= 1000), by = c("gene_name", "seed"))
 
 
-norman_expression_variation_pl <- all_predictions |>
+norman_expression_variation_pl <- double_predictions |>
   summarize(.by = c(gene_name, method, seed),
             sd = sd(prediction)) |>
   mutate(method = factor(method, levels = c("ground_truth", names(method_labels)))) |>
@@ -272,6 +276,9 @@ norman_expression_variation_pl <- all_predictions |>
 
 norman_expression_variation_pl
 ```
+
+
+
 
 #### Single
 

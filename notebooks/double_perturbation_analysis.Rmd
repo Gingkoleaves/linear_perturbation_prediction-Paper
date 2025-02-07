@@ -264,7 +264,7 @@ obs_pred_corr_pl <- contr_res %>%
                nrow  = 3, # ncol = 2, 
                              labeller = labeller(approach = as_labeller(approach_labels), method = as_labeller(method_labels)),
                              strip = ggh4x::strip_nested(clip = "off")) +
-    labs(x = "Observed LFC over control", y = "Predicted LFC over control")
+    labs(x = "Observed minus control expression", y = "Predicted minus control expression")
 
 obs_pred_corr_pl
 ```
@@ -452,7 +452,7 @@ qq_pl <- filter_gt_df %>%
     annotate_labels_along(dir = c(1, sd_est), at = 4.5, labels = "Percentile", offset = 0.15, size = font_size_small / .pt) +
     ggrastr::rasterize(geom_point(size = 0.3, stroke = 0), dpi = 300) +
     coord_fixed() +
-    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the observed\nLFC over additive expectation")
+    labs(x = "Quantiles of a standard normal distribution", y = "Quantiles of the observed \nexpression minus additive expectation")
 qq_pl
 ```
 
@@ -680,8 +680,8 @@ pert_pred_comparison <- pert_pred_comparison_df %>%
                                                  method = as_labeller(method_labels)),
                              nest_line = TRUE, strip = ggh4x::strip_nested(clip = "off")) +
     coord_fixed(xlim = c(-1, 1), ylim = c(-1.4, 1.4)) +
-    labs(x = "Observed LFC over additive expectation", 
-       y = "Predicted LFC over\nadditive expectation", 
+    labs(x = "Observed expression minus additive expectation", 
+       y = "Predicted expr.\\ minus\nadditive expectation", 
        color = "") +
     guides(color = guide_legend(override.aes = list(size = 2)), alpha = "none", size = "none") +
     theme(panel.spacing.x = unit(2, "mm"), legend.position = "bottom")
@@ -766,7 +766,7 @@ tp_fdp_pl
 
 ```{r, paged.print=FALSE}
 prediction_label_vs_true_df <- tp_fdp_prec_recall_data_pre |>
-  slice_max(n = 500, order_by = abs(pred_minus_add), by = c(method)) |>
+  slice_max(n = 500, order_by = abs(pred_minus_add), by = c(method), with_ties = FALSE) |>
   mutate(prediction_label = case_when(
     baseline < ref & ref > value & value >= baseline ~ "buf",
     baseline > ref & ref < value & value <= baseline ~ "buf",
@@ -799,7 +799,7 @@ mosaic_plot <- prediction_label_vs_true_df |>
     scale_y_discrete(labels = c(buf = "Buffering", syn = "Synergy", anti = "Opposite")) +
     scale_fill_manual(values = non_additive_colors) +
     facet_wrap(vars(method), labeller = labeller(method = as_labeller(method_labels)), nrow = 1, scales = "fixed") +
-    labs(y = "Prediction class", x = "Proportion of observed interaction classes") +
+    labs(y = "Predicted class", x = "Proportion of observed interaction classes") +
     guides(fill = "none") +
     coord_cartesian(ylim = c(0.4, 3.2), xlim = c(0,1), clip = "off", expand = FALSE) +
     theme(panel.spacing.x = unit(5, "mm"), panel.spacing.y = unit(1.5, "mm"),
@@ -905,6 +905,10 @@ train_plot <- training_df |>
          .by = bar) |>
   ggplot(aes(x = bar, y = height)) +
     geom_col(aes(fill = part), width = 0.5) +
+    annotate("segment", x = "A", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Ad"], color = colorspace::darken(cartoon_color_values["Ad"], 0.3),
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
+    annotate("segment", x = "B", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Bd"], color = colorspace::darken(cartoon_color_values["Bd"], 0.3),
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     scale_y_continuous(expand = expansion(add = 0)) +
     scale_x_discrete(labels = c(ctrl = "No Perturbation", A = "Perturbation A", B = "Perturbation B")) +
     scale_fill_manual(values = cartoon_color_values) +
@@ -929,17 +933,22 @@ arrow_df <- enframe(height_spec, name = "part", value = "height") |>
   mutate(start_pos = cumsum(lag(height, default = 0)),
            end_pos = cumsum(height)) |>
   mutate(class = list(categories_df$class)) |>
-  unnest(class)
+  unnest(class) |>
+  mutate(part =factor(part, levels = c("ctrl", "Ad", "Bd"))) |>
+  arrange(desc(part))
+
 
 sum_height_spec1 <-  sum(height_spec)
+rel_zero1 <- height_spec["ctrl"]
 obs_plot <- categories_df |>
   ggplot(aes(x = class, y = height)) +
     geom_col(fill = "#5e5e5e", width = 0.5) +
-    annotate(geom = "errorbar", x = "add", ymin = sum_height_spec1 - 0.05, ymax = sum_height_spec1 + 0.05, width = 0.3) +
+    annotate(geom = "errorbar", x = 1.25, ymin = sum_height_spec1 - 0.05, ymax = sum_height_spec1 + 0.05, width = 0.1) +
+    annotate(geom = "errorbar", x = 0.75, ymin = sum_height_spec1 - 0.05, ymax = sum_height_spec1 + 0.05, width = 0.1) +
     geom_segment(data = arrow_df, aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
-                 arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+                 arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     scale_y_continuous(expand = expansion(add = 0), 
-                       sec.axis = sec_axis(transform = \(x) x - sum_height_spec1, 
+                       sec.axis = sec_axis(transform = \(x) x - rel_zero1, 
                                            name = "LFC over additive expectation", breaks = c(0))) +
     scale_x_discrete(labels = c(add = "Additive\n(Non-interaction)", buf = "Buffering", syn = "Synergy", opp = "Opposite")) +
     scale_fill_manual(values = cartoon_color_values) +
@@ -975,9 +984,9 @@ train_plot2 <- training_df |>
   ggplot(aes(x = bar)) +
     geom_tile(aes(fill = part, alpha = part, y = (start_pos + end_pos) / 2, height = abs(end_pos - start_pos)), width = 0.5) +
     annotate("segment", x = "A", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Ad"], color = cartoon_color_values["Ad"],
-             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     annotate("segment", x = "B", y = height_spec["ctrl"], yend = height_spec["ctrl"] + height_spec["Bd"], color = cartoon_color_values["Bd"],
-             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+             linewidth = 0.7, arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     scale_y_continuous(expand = expansion(add = 0)) +
     scale_x_discrete(labels = c(ctrl = "No Perturbation", A = "Perturbation A", B = "Perturbation B")) +
     scale_fill_manual(values = cartoon_color_values) +
@@ -1002,17 +1011,21 @@ arrow_df <- enframe(height_spec, name = "part", value = "height") |>
   mutate(start_pos = cumsum(lag(height, default = 0)),
            end_pos = cumsum(height)) |>
   mutate(class = list(categories_df$class)) |>
-  unnest(class)
+  unnest(class) |>
+  mutate(part =factor(part, levels = c("ctrl", "Ad", "Bd"))) |>
+  arrange(desc(part))
 
 sum_height_spec2 <-  sum(height_spec)
+rel_zero2 <- height_spec["ctrl"]
 obs_plot2 <- categories_df |>
   ggplot(aes(x = class, y = height)) +
     geom_col(fill = "#5e5e5e", width = 0.5) +
-    annotate(geom = "errorbar", x = "add", ymin = sum_height_spec2 - 0.05, ymax = sum_height_spec2 + 0.05, width = 0.3) +
-    geom_segment(data = arrow_df %>% filter(part != "ctrl"), aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
-                 arrow = grid::arrow(type = "closed", length = unit(1.5, "mm"))) +
+    annotate(geom = "errorbar", x = 1.25, ymin = sum_height_spec2 - 0.02, ymax = sum_height_spec2 + 0.02, width = 0.1) +
+    annotate(geom = "errorbar", x = 0.75, ymin = sum_height_spec2 - 0.02, ymax = sum_height_spec2 + 0.02, width = 0.1) +
+    geom_segment(data = arrow_df %>% arrange(1)%>% filter(part != "ctrl"), aes(color = part, y = start_pos, yend = end_pos), linewidth = 0.7,
+                 arrow = grid::arrow(type = "closed", length = unit(1, "mm"))) +
     scale_y_continuous(expand = expansion(add = 0), 
-                       sec.axis = sec_axis(transform = \(x) x - sum_height_spec2, 
+                       sec.axis = sec_axis(transform = \(x) x - rel_zero2, 
                                            name = "LFC over additive expectation", breaks = c(0))) +
     scale_x_discrete(labels = c(add = "Additive\n(Non-interaction)", buf = "Buffering", syn = "Synergy", opp = "Opposite")) +
     scale_fill_manual(values = cartoon_color_values) +
@@ -1053,8 +1066,8 @@ plot_assemble(
   
   add_text("(D) Classification of interactions", x = 62.7, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(cartoon_pl, x = 65, y = 70, width = 65, height = 60),
-  add_text("Log Expression of a two example genes", x = 64.5, y = 93, angle = 90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
-  add_text("LFC over additive expectation", x = 130, y = 93, angle = -90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
+  add_text("Log expression of example read-out gene", x = 64.5, y = 93, angle = 90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
+  add_text("LFC compared to control", x = 130, y = 93, angle = -90, fontsize = font_size_small, vjust = 0.5, hjust = 0.5),
   
   add_text("(E) Observed composition\nof interaction classes", x = 141, y = 66, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(non_add_pl1, x = 139, y = 76, width = 20, height = 45),
@@ -1063,7 +1076,7 @@ plot_assemble(
           x = 140, y = 76, width = 37, heigh = 45),
   add_plot(non_add_pl2, x = 156, y = 76, width = 20, height = 45),
 
-  add_text("(F) Prediction of LFC over additive expectation and interaction class", x = 2.7, y = 131.5, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("(F) Prediction of change relative to additive expectation and interaction class", x = 2.7, y = 131.5, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(pert_pred_comparison + guides(color = "none"), x = 4, y = 135, width = 176, height = 40),
   add_plot(mosaic_plot + theme(strip.text = element_blank(), axis.text.x = element_text(size = font_size_tiny)), x = 0, y = 173, width = 180, height = 20),
   add_plot(my_get_legend(pert_pred_comparison), x = 125, y = 131.5, width = 50, height = 5),

@@ -357,7 +357,7 @@ map(main_plots, "main_pl")
 ```{r, paged.print=FALSE}
 main_pl_data %>%
   filter(method == "gears") %>%
-  count(dataset_name)
+  count(dataset_name, seed)
 ```
 
 
@@ -367,7 +367,7 @@ sel_ranks <- c(seq(1, 100, by = 1), seq(101, 1000, by = 10), seq(1001, 19264, by
 
 strat_data_expr_rank <- full_long_df %>%
   filter(train != "train") %>%
-  left_join(expr_rank_df %>% distinct(gene_name, .keep_all=TRUE) %>%
+  left_join(expr_rank_df %>% distinct(gene_name, dataset_name, seed, .keep_all=TRUE) %>%
               dplyr::select(dataset_name, seed, gene_name, rank = expr_rank),
             by = c("dataset_name", "seed", "gene_name")) %>%
   arrange(rank) %>%
@@ -385,6 +385,8 @@ strat_data_de_rank <- full_long_df %>%
          .by = c(dataset_name, seed, method, perturbation))%>% 
   filter(rank %in% sel_ranks)
 ```
+
+
 
 
 ```{r, paged.print=FALSE}
@@ -406,7 +408,7 @@ strat_plot <- strat_data_expr_rank %>%
   filter(method != "cpa") |>
   summarize(dist_mean = mean(dist),
             dist_se = sd(dist) / sqrt(first(rank)),
-            .by = c(method, dataset_name, seed, rank)) %>%
+            .by = c(method, dataset_name, rank)) %>%
   ggplot(aes(x = rank, y = dist_mean)) +
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.3), dpi = 600) +
     ggrepel::geom_text_repel(data = . %>% filter(dataset_name == "replogle_k562_essential") %>% 
@@ -625,7 +627,7 @@ transfer_rpe1_pl <- transfer_rpe1 |>
     coord_fixed(ylim = c(0, 3), xlim = c(0, 4)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3, 4)) +
-    labs(subtitle = sprintf("RPE1: slope= %.2f", coef(rpe1_lm)[2]),
+    labs(subtitle = sprintf("Trained on K562 to predict RPE1\nslope= %.2f", coef(rpe1_lm)[2]),
          x = "Absolute difference of gene expression in RPE1 and K562",
          y = "Absolute difference of\nPredicted and Observed")
 
@@ -636,7 +638,7 @@ transfer_k562_pl <- transfer_k562 |>
     coord_fixed(ylim = c(0, 3), xlim = c(0, 4)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3, 4)) +
-    labs(subtitle = sprintf("K562: slope= %.2f", coef(k562_lm)[2]),
+    labs(subtitle = sprintf("Trained on RPE1 to predict K562\nslope= %.2f", coef(k562_lm)[2]),
          x = "Absolute difference of gene expression in RPE1 and K562",
          y = "Absolute difference of\nPredicted and Observed")
 ```
@@ -676,7 +678,7 @@ rpe1_target_cor_pl <- ggplot(rpe1_target_cor_dat, aes(x = abs(rpe1_baseline - k5
     coord_cartesian(ylim = c(-0.2, 1), xlim = c(0, 3)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 0.5, 1)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
-    labs(subtitle = sprintf("RPE1: slope = %.2f", coef(rpe1_target_lm)[2]),
+    labs(subtitle = sprintf("Trained on K562 to predict RPE1\nslope = %.2f", coef(rpe1_target_lm)[2]),
          x = "Absolute difference of perturbation target\ngene expression in RPE1 and K562",
          y = "Pearson Delta")
 
@@ -698,7 +700,7 @@ k562_target_cor_pl <- ggplot(k562_target_cor_dat, aes(x = abs(rpe1_baseline - k5
     coord_cartesian(ylim = c(-0.2, 1), xlim = c(0, 3)) +
     scale_y_continuous(expand = expansion(add = 0), breaks = c(0, 0.5, 1)) +
     scale_x_continuous(expand = expansion(add = 0), breaks = c(0, 1, 2, 3)) +
-    labs(subtitle = sprintf("K562: slope = %.2f", coef(k562_target_lm)[2]),
+    labs(subtitle = sprintf("Trained on RPE1 to predict K562\nslope = %.2f", coef(k562_target_lm)[2]),
          x = "Absolute difference of perturbation target\ngene expression in RPE1 and K562",
          y = "Pearson Delta")
 ```
@@ -709,12 +711,12 @@ plot_assemble(
            x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(rpe1_k562_compl_pl, x = 0, y = 5, width = 50, height = 50),
   
-  add_text("(B) Per gene error depends on diff. expression between K562 and RPE1", 
+  add_text("(B) Read-out gene error depends its on diff. expression between K562 and RPE1", 
            x = 53, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(transfer_rpe1_pl, x = 53, y = 5, width = 60, height = 50),
   add_plot(transfer_k562_pl, x = 115, y = 5, width = 60, height = 50),
   
-  add_text("(C) Per perturbation correlation depends on target gene diff. expression between K562 and RPE1", 
+  add_text("(C) Perturbation correlation depends on the target gene diff. expression between K562 and RPE1", 
            x = 2.7, y = 56, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_plot(rpe1_target_cor_pl, x = 0, y = 59, width = 50, height = 50),
   add_plot(k562_target_cor_pl, x = 60, y = 59, width = 50, height = 50),
