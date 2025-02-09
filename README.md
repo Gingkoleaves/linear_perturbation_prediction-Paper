@@ -1,6 +1,12 @@
-# Code repository for *Deep learning-based predictions of gene perturbation effects do not yet outperform simple linear methods*
+# Code repository for *Deep learning-based predictions of gene perturbation effects do not yet outperform simple linear baselines*
 
-This repository contains the code to reproduce our analysis.
+This repository contains the code to reproduce our analysis from
+
+> Deep learning-based predictions of gene perturbation effects do not yet outperform simple linear baselines. 
+Constantin Ahlmann-Eltze, Wolfgang Huber, Simon Anders
+bioRxiv 2024.09.16.613342; doi: https://doi.org/10.1101/2024.09.16.613342
+
+A copy of the code is permanently archived at https://doi.org/10.5281/zenodo.14832393.
 
 - The **notebooks** folder contains the R scripts used for the analysis and to make the figures
   - [Double Perturbation Analysis](https://htmlpreview.github.io/?https://github.com/const-ae/linear_perturbation_prediction-Paper/blob/main/notebooks/double_perturbation_analysis.html)
