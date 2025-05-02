@@ -233,7 +233,7 @@ main_pl_double_l2
 
 
 ```{r, paged.print=FALSE}
-obs_pred_corr_pl <- contr_res %>%
+obs_pred_corr_dat <- contr_res %>%
   inner_join(sel_perts, by = c("dataset_name", "seed", "method", "perturbation")) %>%
   filter(method %in% names(method_labels)) %>%
   mutate(method = factor(method, levels = names(method_labels))) %>%
@@ -246,7 +246,9 @@ obs_pred_corr_pl <- contr_res %>%
   inner_join(expr_rank_df %>% dplyr::select(dataset_name, seed, gene_name, expr_rank) %>% 
                filter(expr_rank <= 1000), by = c("dataset_name", "seed", "gene_name")) %>%
   mutate(obs_minus_baseline = clamp(observed - baseline, min = -1, max = 1),
-         pred_minus_baseline = clamp(prediction - baseline, min = -1, max = 1)) %>%
+         pred_minus_baseline = clamp(prediction - baseline, min = -1, max = 1)) 
+
+obs_pred_corr_pl <- obs_pred_corr_dat|>
   ggplot(aes(x = obs_minus_baseline, y = pred_minus_baseline)) +
     geom_abline(linewidth = 0.2, linetype = "dashed") +
     ggrastr::rasterize(geom_point(size = 0.5, stroke = 0), dpi = 600) +
@@ -365,6 +367,15 @@ plot_assemble(
   latex_support = TRUE, filename = "../plots/suppl-pearson_delta_performance.pdf"
 )
 ```
+
+```{r, paged.print=FALSE}
+writexl::write_xlsx(list(
+  "Panel A"  = main_pl_data,
+  "Panel B" = strat_merged
+  ), path = "../source_data/suppl-pearson_delta_performance.xlsx"
+)
+```
+
 
 
 ```{r, paged.print=FALSE}
@@ -530,6 +541,9 @@ plot_assemble(
 )
 ```
 
+```{r, paged.print=FALSE}
+writexl::write_xlsx(filter_gt_df, path = "../source_data/suppl-qqplot.xlsx")
+```
 
 
 ```{r, paged.print=FALSE}
@@ -882,6 +896,12 @@ plot_assemble(
 
 ```
 
+```{r, paged.print=FALSE}
+# Data is too large and cannot be saved
+# writexl::write_xlsx(list(
+#   tp_fdp_prec_recall_data_pre
+# ), path = "../source_data/suppl-roc_curves.xlsx")
+```
 
 
 
@@ -1087,6 +1107,20 @@ plot_assemble(
 ```
 
 ```{r, paged.print=FALSE}
+writexl::write_xlsx(list(
+  "Panel A" = main_pl_data,
+  "Panel B" = obs_pred_corr_dat |> dplyr::select(-c(prediction_std, perturbation_split)),
+  "Panel C" = tp_fdp_data,
+  "Panel E" = non_additive_counts,
+  "Panel F" = pert_pred_comparison_df %>%
+    filter(rank(desc(abs(pred_minus_add))) <= 500, .by = c(method)) |>
+    mutate(`NOTE THIS IS ONLY THE BOLD DATA POINTS` = "")
+), path = "../source_data/perturbation_prediction.xlsx")
+```
+
+
+
+```{r, paged.print=FALSE}
 overlap_preparation_df <- tp_fdp_prec_recall_data_pre |>
   slice_head(n = 500, by = c(method)) |>
   summarize(.by = c(perturbation, gene_name, seed, true_nonadditive, interaction_label),
@@ -1252,6 +1286,14 @@ plot_assemble(
 ```
 
 
+```{r}
+writexl::write_xlsx(list(
+  "Panel A" = top_gene_reoccurence,
+  "Panel B" = top_perturbation_reoccurence
+), path = "../source_data/suppl-non_additive_gene_reoccurence.xlsx")
+```
+
+
 ```{r, paged.print=FALSE}
 plot_data <- inter_pred_dat %>%
   tidylog::inner_join(gene_response_label_df|> dplyr::select(gene_name, pert_group, seed,pert_same_dir,interaction_label = label), by = c("perturbation" = "pert_group", "gene_name", "seed")) %>%
@@ -1277,7 +1319,7 @@ pl1 <- plot_data |>
     scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
     facet_wrap(vars(method), nrow = 3, labeller = as_labeller(method_labels)) +
     guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
-    labs(y = "Expression of HBG2", x = "Double perturbation") +
+    labs(y = "Expression of \\emph{HBG2}", x = "Double perturbation") +
     theme(axis.text.x = element_text(size = 4))
 
 pl2 <- plot_data |>
@@ -1295,14 +1337,14 @@ pl2 <- plot_data |>
     scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) +
     facet_wrap(vars(method), nrow = 3, labeller = as_labeller(method_labels)) +
     guides(x = guide_axis(angle = 90), color = "none", alpha = "none") +
-    labs(y = "Expression of HBZ", x = "Double perturbation") +
+    labs(y = "Expression of \\emph{HBZ}", x = "Double perturbation") +
     theme(axis.text.x = element_text(size = 4))
 ```
 
 
 ```{r}
 plot_assemble(
-  add_text("Analysis of the predicted and observed expression patterns for HBG2 and HBZ", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
+  add_text("Analysis of the predicted and observed expression patterns for \\emph{HBG2} and \\emph{HBZ}", x = 2.7, y = 1, fontsize = font_size, vjust = 1, fontface = "bold"),
   add_text(paste0("Comparison of the observed expression {\\scriptsize\\textcolor{nonAdditivePurple}\\faCircle}\\,{\\scriptsize\\textcolor{nonAdditiveGrey}\\faCircle}\\,{\\scriptsize\\textcolor{nonAdditiveOrange}\\faCircle} ",
                   "against predicted value {\\tiny\\faSquare} for each double perturbation. The grey box in the background shows the additive range."),
            x = 2.7, y = 6, fontsize = font_size_small, vjust = 1),
@@ -1316,6 +1358,9 @@ plot_assemble(
 )
 ```
 
+```{r, paged.print=FALSE}
+writexl::write_xlsx(plot_data, path = "../source_data/suppl-top_gene_plots.xlsx")
+```
 
 
 
@@ -1400,6 +1445,11 @@ plot_assemble(
   width = 180, height = 52, units = "mm", show_grid_lines = FALSE,
   latex_support = TRUE, filename = "../plots/suppl-resource_usage.pdf"
 )
+```
+
+
+```{r, paged.print=FALSE}
+writexl::write_xlsx(resource_df, path = "../source_data/suppl-resource_usage.xlsx")
 ```
 
 

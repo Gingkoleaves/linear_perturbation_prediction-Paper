@@ -401,14 +401,15 @@ names(ggplot_colors_five) <- names(method_labels_other)
 label_pos <- c(mean = 640, lpm_selftrained = 320, scgpt = 5, uce = 160,
                gears = 10, geneformer = 40, cpa = 100, scbert = 80)
 
-
-strat_plot <- strat_data_expr_rank %>%
+strat_plot_dat <- strat_data_expr_rank %>%
   mutate(dataset_name = factor(dataset_name, levels = names(dataset_labels))) |>
   mutate(method = factor(method, levels = names(method_labels_other))) %>%
   filter(method != "cpa") |>
   summarize(dist_mean = mean(dist),
             dist_se = sd(dist) / sqrt(first(rank)),
-            .by = c(method, dataset_name, rank)) %>%
+            .by = c(method, dataset_name, rank))
+
+strat_plot <- strat_plot_dat %>%
   ggplot(aes(x = rank, y = dist_mean)) +
     ggrastr::rasterize(geom_line(aes(color = method), linewidth = 0.3), dpi = 600) +
     ggrepel::geom_text_repel(data = . %>% filter(dataset_name == "replogle_k562_essential") %>% 
@@ -480,6 +481,14 @@ plot_assemble(
   latex_support = TRUE, filename = "../plots/suppl-pearson_delta_performance_single_pert.pdf"
 )
 ```
+
+```{r, paged.print=FALSE}
+writexl::write_xlsx(list(
+  "Panel A" = main_pl_data2,
+  "Panel B" = strat_plot_dat
+), path = "../source_data/suppl-pearson_delta_performance_single_pert.xlsx")
+```
+
 
 
 
@@ -572,6 +581,14 @@ plot_assemble(
   latex_support = TRUE, filename = "../plots/single_perturbation_prediction.pdf"
 )
 ```
+
+```{r}
+writexl::write_xlsx(list(
+  "Panel A" = main_pl_data2,
+  "Panel C" = res_metrics_including_transfer
+), path = "../source_data/single_perturbation_prediction.xlsx")
+```
+
 
 
 # Look at gene expression predictions as a function of differential expression between K562 and RPE1
@@ -728,6 +745,12 @@ plot_assemble(
 ```
 
 
+```{r, paged.print=FALSE}
+writexl::write_xlsx(list(
+  "Panel A" = k562_rpe1_comp,
+  "Panel C" = bind_rows(rpe1 = rpe1_target_cor_dat, k562 = k562_target_cor_dat, .id = "data")
+), path = "../source_data/suppl-k562_rpe1_transfer.xlsx")
+```
 
 
 

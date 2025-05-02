@@ -55,9 +55,11 @@ target_gene_expr <- dat |>
   unnest(perturbation_split) |>
   filter(perturbation_split == gene_name)
 
-target_gene_change_plots <- target_gene_expr |>
+target_gene_change_plots_dat <- target_gene_expr |>
   left_join(baselines |> dplyr::select(dataset, baseline = prediction, baseline_std = prediction_std, gene_name), by = c("dataset", "gene_name")) |>
-  summarize(.by = c(gene_name, dataset), prediction = mean(prediction), baseline = mean(baseline)) |>
+  summarize(.by = c(gene_name, dataset), prediction = mean(prediction), baseline = mean(baseline))
+
+target_gene_change_plots <- target_gene_change_plots_dat |>
   group_by(dataset) |>
   group_map(\(data, key){
     data |>
@@ -110,7 +112,7 @@ n_genes_per_cluster <- clustering |> map(\(x){
          cluster = as.factor(cluster))
   
 set.seed(1)
-dataset_umaps <- tibble(dataset = names(dataset_labels), 
+dataset_umaps_dat <- tibble(dataset = names(dataset_labels), 
        umap = umaps, 
        pert = map(pca_mats, colnames),
        cluster = clustering) |>
@@ -128,7 +130,9 @@ dataset_umaps <- tibble(dataset = names(dataset_labels),
     ! str_detect(pert, "ctrl") ~ "Double Perturbation",
     .default = "Other"
   )) |>
-  mutate(point_label = factor(point_label, c("No Perturbation", "Single Perturbation", "Double Perturbation"))) |>
+  mutate(point_label = factor(point_label, c("No Perturbation", "Single Perturbation", "Double Perturbation"))) 
+
+dataset_umaps <- dataset_umaps_dat |>
   ggplot(aes(x = umap[,1], y = umap[,2])) +
     ggrastr::rasterize(geom_point(aes(color = point_label), size = 0.7, stroke = 0), dpi = 500) +
     geom_point(data = . %>% filter(pert == "ctrl"), aes(color = point_label), size = 1.5, stroke = 0) +
@@ -184,6 +188,12 @@ plot_assemble(
 )
 ```
 
+```{r, paged.print=FALSE}
+writexl::write_xlsx(list(
+  "Panel B" = dataset_umaps_dat,
+  "Panel C" = target_gene_change_plots_dat
+), path = "../source_data/suppl-dataset_overview.xlsx")
+```
 
 
 ## Prediction variation
