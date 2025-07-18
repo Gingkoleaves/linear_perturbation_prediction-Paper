@@ -3,8 +3,8 @@
 This repository contains the code to reproduce our analysis from
 
 > Deep learning-based predictions of gene perturbation effects do not yet outperform simple linear baselines. 
-Constantin Ahlmann-Eltze, Wolfgang Huber, Simon Anders
-Nature Methods 2025; doi: https://doi.org/10.1038/s41592-025-02772-6
+Constantin Ahlmann-Eltze, Wolfgang Huber, Simon Anders.
+_Nature Methods_ 2025; doi: https://doi.org/10.1038/s41592-025-02772-6
 
 A copy of the code is permanently archived at https://doi.org/10.5281/zenodo.14832393.
 
