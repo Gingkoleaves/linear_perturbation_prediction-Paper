@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
+from collections import defaultdict
 
 import numpy as np
 
@@ -15,6 +17,15 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--base_pred_file", default="all_predictions.json")
     p.add_argument("--cfy_pred_file", default="all_predictions.json")
     p.add_argument("--gt_pred_file", default="all_predictions.json")
+    p.add_argument(
+        "--label_csv",
+        default="",
+        help=(
+            "Optional gene-level label CSV (for example "
+            "perturb_processed_with_coeffect_gene_level.csv). "
+            "When set, also reports per-class MSE on labeled (condition, gene) pairs."
+        ),
+    )
     p.add_argument(
         "--no_normalize_keys",
         action="store_true",
@@ -61,6 +72,102 @@ def _eval_mse(
     return len(common), len(dual), mse_all, mse_dual
 
 
+def _safe_rel_change(new_value: float, old_value: float) -> float:
+    if old_value == 0.0:
+        return float("nan")
+    return ((new_value - old_value) / old_value) * 100.0
+
+
+def _resolve_label_name(row: dict[str, str]) -> str | None:
+    if row.get("CoEffect_Type"):
+        return str(row["CoEffect_Type"]).strip()
+    if row.get("label"):
+        raw = str(row["label"]).strip()
+        label_map = {
+            "0": "Additive",
+            "1": "Synergy",
+            "2": "Buffering",
+            "3": "Opposite",
+            "4": "Other",
+        }
+        return label_map.get(raw, raw)
+    return None
+
+
+def _eval_labeled_class_mse(
+    base: dict[str, np.ndarray],
+    cfy: dict[str, np.ndarray],
+    truth: dict[str, np.ndarray],
+    label_csv: Path,
+    normalize_keys: bool,
+) -> dict[str, object]:
+    common = set(base.keys()) & set(cfy.keys()) & set(truth.keys())
+    if not common:
+        raise ValueError("No common conditions across baseline, CFY, and ground truth.")
+
+    sum_base: dict[str, float] = defaultdict(float)
+    sum_cfy: dict[str, float] = defaultdict(float)
+    count_pairs: dict[str, int] = defaultdict(int)
+    class_conditions: dict[str, set[str]] = defaultdict(set)
+
+    with label_csv.open("r", encoding="utf8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            condition_raw = str(row.get("condition", "")).strip()
+            if not condition_raw:
+                continue
+            condition = _canon_key(condition_raw) if normalize_keys else condition_raw
+            if condition not in common:
+                continue
+
+            label_name = _resolve_label_name(row)
+            if not label_name:
+                continue
+
+            gene_idx_raw = str(row.get("gene_idx", "")).strip()
+            if not gene_idx_raw:
+                continue
+            try:
+                gene_idx = int(gene_idx_raw)
+            except ValueError:
+                continue
+
+            truth_vec = truth[condition]
+            base_vec = base[condition]
+            cfy_vec = cfy[condition]
+            if gene_idx < 0 or gene_idx >= len(truth_vec):
+                continue
+
+            se_base = float((base_vec[gene_idx] - truth_vec[gene_idx]) ** 2)
+            se_cfy = float((cfy_vec[gene_idx] - truth_vec[gene_idx]) ** 2)
+            sum_base[label_name] += se_base
+            sum_cfy[label_name] += se_cfy
+            count_pairs[label_name] += 1
+            class_conditions[label_name].add(condition)
+
+    class_order = ["Additive", "Synergy", "Buffering", "Opposite", "Other"]
+    seen = set(class_order)
+    class_order.extend(sorted(k for k in count_pairs.keys() if k not in seen))
+
+    out: dict[str, object] = {}
+    for label_name in class_order:
+        n_pairs = count_pairs.get(label_name, 0)
+        if n_pairs == 0:
+            continue
+        mse_base = sum_base[label_name] / n_pairs
+        mse_cfy = sum_cfy[label_name] / n_pairs
+        out[label_name] = {
+            "pairs": n_pairs,
+            "conditions": len(class_conditions[label_name]),
+            "mse_base": mse_base,
+            "mse_cfy": mse_cfy,
+            "delta": mse_cfy - mse_base,
+            "rel_change_pct": _safe_rel_change(mse_cfy, mse_base),
+        }
+
+    return out
+
+
 def main() -> None:
     args = _parse_args()
     normalize = not args.no_normalize_keys
@@ -91,13 +198,25 @@ def main() -> None:
         "mse_base_all": mse_base_all,
         "mse_cfy_all": mse_cfy_all,
         "delta_all": mse_cfy_all - mse_base_all,
-        "rel_change_all_pct": ((mse_cfy_all - mse_base_all) / mse_base_all) * 100.0,
+        "rel_change_all_pct": _safe_rel_change(mse_cfy_all, mse_base_all),
         "mse_base_dual": mse_base_dual,
         "mse_cfy_dual": mse_cfy_dual,
         "delta_dual": mse_cfy_dual - mse_base_dual,
-        "rel_change_dual_pct": ((mse_cfy_dual - mse_base_dual) / mse_base_dual) * 100.0,
+        "rel_change_dual_pct": _safe_rel_change(mse_cfy_dual, mse_base_dual),
         "normalized_keys": normalize,
     }
+
+    if args.label_csv:
+        label_csv = Path(args.label_csv)
+        if not label_csv.exists():
+            raise FileNotFoundError(f"Label CSV not found: {label_csv}")
+        out["class_mse"] = _eval_labeled_class_mse(
+            base_sub,
+            cfy_sub,
+            gt_sub,
+            label_csv=label_csv,
+            normalize_keys=normalize,
+        )
 
     print(json.dumps(out, indent=2, ensure_ascii=False))
 

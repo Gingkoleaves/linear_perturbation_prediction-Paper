@@ -64,6 +64,12 @@ python3 src/prepare_perturbation_data.py \
   --seed 1 \
   --working_dir . \
   --result_id seed_1_norman_split
+
+python3 src/prepare_perturbation_data.py \
+  --dataset_name gse220974 \
+  --seed 1 \
+  --working_dir . \
+  --result_id seed_1_gse220974_split
 ```
 
 In the next step we will use the output (`/tmp/working_dir/results/seed_1_adamson_split`) to run the linear model (`src/run_linear_pretrained_model.R`):
@@ -99,7 +105,13 @@ python3 src/run_additive_model.py \
     --dataset_name norman \
     --test_train_config_id seed_1_norman_split \
     --working_dir . \
-    --result_id addi_norman_results   
+    --result_id addi_norman_results 
+
+python3 src/run_additive_model.py \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
+    --working_dir . \
+    --result_id addi_gse220974_results   
 
 conda activate scfoundation_env
 python3 src/run_scfoundation.py \
@@ -108,6 +120,13 @@ python3 src/run_scfoundation.py \
     --working_dir . \
     --result_id scfoundation_norman_results 
 
+conda activate scfoundation_env
+python3 src/run_scfoundation.py \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
+    --working_dir . \
+    --result_id scfoundation_gse220974_results 
+    
 conda activate gears_env2
 python3 src/run_gears.py \
     --dataset_name adamson \
@@ -121,6 +140,102 @@ python3 src/run_cpa.py \
     --test_train_config_id seed_1_norman_split \
     --working_dir . \
     --result_id cpa_norman_results
+```
+
+For `gse220974`, the current recommended `GEARS + CFY` workflow in this repository is:
+
+```shell
+# 1) prepare split
+conda activate gears_env2
+python3 src/prepare_perturbation_data.py \
+  --dataset_name gse220974 \
+  --seed 1 \
+  --working_dir . \
+  --result_id seed_1_gse220974_split
+
+# 2) generate ground truth
+python3 src/run_ground_truth_for_combinatorial_perturbations.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --result_id ground_truth_gse220974_results
+
+# 3) run GEARS baseline
+python3 src/run_gears.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --result_id gears_gse220974_e20
+
+# 4) run the best CFY post-hoc setup found so far
+python3 src/run_gears_cfy_plugin.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --base_result_id gears_gse220974_e20 \
+  --result_id gears_gse220974_e20_cfy_overall_best_v2 \
+  --model_name gears \
+  --preset gears_gse220974_overall
+
+# 5) evaluate baseline vs CFY
+python3 src/evaluate_predictions_mse.py \
+  --base_result_dir results/gears_gse220974_e20 \
+  --cfy_result_dir results/gears_gse220974_e20_cfy_overall_best_v2 \
+  --ground_truth_dir results/ground_truth_gse220974_results \
+  --label_csv data/gears_pert_data/gse220974/perturb_processed_with_coeffect_gene_level.csv
+```
+
+For `gse220974`, the current best `Additive + CFY` workflow found so far is:
+
+```shell
+# 1) prepare split
+conda activate gears_env2
+python3 src/prepare_perturbation_data.py \
+  --dataset_name gse220974 \
+  --seed 1 \
+  --working_dir . \
+  --result_id seed_1_gse220974_split
+
+# 2) generate ground truth
+python3 src/run_ground_truth_for_combinatorial_perturbations.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --result_id ground_truth_gse220974_results
+
+# 3) run additive baseline
+python3 src/run_additive_model.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --result_id addi_gse220974_results
+
+# 4) run the best CFY post-hoc setup found so far
+#    This setup disables label loss and trains the post-hoc adaptor for 20 epochs.
+python3 src/run_additive_cfy_plugin.py \
+  --dataset_name gse220974 \
+  --test_train_config_id seed_1_gse220974_split \
+  --working_dir . \
+  --base_result_id addi_gse220974_results \
+  --result_id addi_gse220974_cfy_regonly_e20 \
+  --model_name additive \
+  --disable_label_loss \
+  --epochs 20 \
+  --lr 1e-3 \
+  --weight_decay 1e-4 \
+  --conditions_per_batch 4 \
+  --gene_embedding_dim 128 \
+  --hidden_dim 128 \
+  --dropout 0.1 \
+  --cls_loss_weight 0 \
+  --additive_anchor_weight 0
+
+# 5) evaluate baseline vs CFY
+python3 src/evaluate_predictions_mse.py \
+  --base_result_dir results/addi_gse220974_results \
+  --cfy_result_dir results/addi_gse220974_cfy_regonly_e20 \
+  --ground_truth_dir results/ground_truth_gse220974_results \
+  --label_csv data/gears_pert_data/gse220974/perturb_processed_with_coeffect_gene_level.csv
 ```
 
 Each script produces a JSON file with the predictions of the gene expression for each perturbation and one JSON file listing the genes (as the order might differ). You can load the results with R and plot them:
@@ -167,6 +282,4 @@ res %>%
   ggplot(aes(x = method, y = dist)) +
     ggbeeswarm::geom_quasirandom()
 ```
-
-
 

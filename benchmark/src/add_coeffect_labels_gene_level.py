@@ -3,6 +3,13 @@ Add co-effect type labels at [dual_perturbation, gene] level.
 Each (condition, gene) pair gets its own co-effect type label.
 Following perturblib's approach: keep gene-level labels, don't aggregate.
 """
+import argparse
+import os
+from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mpl")
+os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
+
 import scanpy as sc
 import numpy as np
 import pandas as pd
@@ -10,7 +17,7 @@ from scipy.stats import norm, gaussian_kde
 from tqdm import tqdm
 
 
-def classify_coeffect_gene_level(adata_path, output_path=None):
+def classify_coeffect_gene_level(adata_path, output_csv_path=None):
     """
     Add co_effect_type at gene level for each (condition, gene) pair.
 
@@ -143,14 +150,13 @@ def classify_coeffect_gene_level(adata_path, output_path=None):
     print(condition_type_dist.head(10))
 
     # Save gene-level results
-    if output_path:
-        # Save as CSV for easy inspection
-        csv_path = output_path.replace('.h5ad', '_gene_level.csv')
-        results_df.to_csv(csv_path, index=False)
-        print(f"\nGene-level results saved to {csv_path}")
+    if output_csv_path:
+        output_csv_path = Path(output_csv_path)
+        output_csv_path.parent.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(output_csv_path, index=False)
+        print(f"\nGene-level results saved to {output_csv_path}")
 
-        # Also save as parquet for efficient loading when parquet engine is available
-        parquet_path = output_path.replace('.h5ad', '_gene_level.parquet')
+        parquet_path = output_csv_path.with_suffix(".parquet")
         try:
             results_df.to_parquet(parquet_path, index=False)
             print(f"Gene-level results saved to {parquet_path}")
@@ -266,14 +272,53 @@ def classify_types(results_df):
     return results_df
 
 
-if __name__ == "__main__":
-    input_path = "data/gears_pert_data/norman/perturb_processed.h5ad"
-    output_path = "data/gears_pert_data/norman/perturb_processed_with_coeffect.h5ad"
+def _default_output_csv(adata_path: str) -> Path:
+    adata_path = Path(adata_path)
+    return adata_path.with_name("perturb_processed_with_coeffect_gene_level.csv")
 
-    results_df = classify_coeffect_gene_level(input_path, output_path)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate gene-level co-effect labels for CFY from a benchmark "
+            "perturb_processed.h5ad file."
+        )
+    )
+    parser.add_argument(
+        "--adata_path",
+        required=True,
+        help="Path to perturb_processed.h5ad",
+    )
+    parser.add_argument(
+        "--output_csv",
+        default="",
+        help=(
+            "Output CSV path. Default: sibling file named "
+            "perturb_processed_with_coeffect_gene_level.csv"
+        ),
+    )
+    args = parser.parse_args()
+
+    output_csv = Path(args.output_csv) if args.output_csv else _default_output_csv(args.adata_path)
+    results_df = classify_coeffect_gene_level(args.adata_path, str(output_csv))
 
     if results_df is not None:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("Sample Results:")
-        print("="*60)
-        print(results_df[['condition', 'gene_name', 'CoEffect_Type', 'LFC_observed', 'LFC_additive', 'interaction']].head(20))
+        print("=" * 60)
+        print(
+            results_df[
+                [
+                    "condition",
+                    "gene_name",
+                    "CoEffect_Type",
+                    "LFC_observed",
+                    "LFC_additive",
+                    "interaction",
+                ]
+            ].head(20)
+        )
+
+
+if __name__ == "__main__":
+    main()

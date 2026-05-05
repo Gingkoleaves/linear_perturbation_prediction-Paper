@@ -9,6 +9,8 @@ import signal
 import threading
 import time
 from pathlib import Path
+import csv
+from copy import deepcopy
 
 import session_info
 
@@ -22,6 +24,175 @@ import gears.version
 assert gears.version.__version__ == '0.0.2'
 from gears import PertData, GEARS
 from gears.utils import filter_pert_in_go
+
+
+SCFOUNDATION_GENE_VOCAB_PATH = (
+  Path(__file__).resolve().parents[2] / "scFoundation" / "model" / "OS_scRNA_gene_index.19264.tsv"
+)
+SCFOUNDATION_ALIGNED_SUFFIX = "_scfoundation19264"
+SCFOUNDATION_ALIGNMENT_VERSION = 2
+DEFAULT_SCF_BATCH_SIZE = 6
+DEFAULT_SCF_TEST_BATCH_SIZE = 6
+DEFAULT_SCF_ACCUMULATION_STEPS = 5
+DEFAULT_SCF_LR = 0.01
+DEFAULT_SCF_FINETUNE_METHOD = "frozen"
+DEFAULT_SCF_PREDICT_NUM_SAMPLES = 300
+DEFAULT_SCF_PREDICT_BATCH_SIZE = 5
+
+
+def _load_scfoundation_gene_vocab() -> list[str]:
+  with open(SCFOUNDATION_GENE_VOCAB_PATH, newline="", encoding="utf-8") as handle:
+    reader = csv.DictReader(handle, delimiter="\t")
+    return [str(row["gene_name"]) for row in reader]
+
+
+def _needs_scfoundation_alignment(adata, gene_vocab: list[str]) -> bool:
+  if "gene_name" not in adata.var.columns:
+    raise ValueError("scFoundation requires `adata.var['gene_name']`.")
+  gene_names = adata.var["gene_name"].astype(str).tolist()
+  return (adata.n_vars != len(gene_vocab)) or (gene_names != gene_vocab)
+
+
+def _align_adata_to_gene_vocab(adata, gene_vocab: list[str]):
+  import pandas as pd
+  import scipy.sparse as sp
+  import anndata as ad
+
+  gene_names = adata.var["gene_name"].astype(str).tolist()
+  if len(set(gene_names)) != len(gene_names):
+    duplicated = pd.Series(gene_names)[pd.Series(gene_names).duplicated()].unique().tolist()
+    raise ValueError(
+      "scFoundation alignment requires unique gene_name values; found duplicates: "
+      + ", ".join(map(str, duplicated[:10]))
+    )
+
+  name_to_src_idx = {gene: idx for idx, gene in enumerate(gene_names)}
+  matched_vocab_idx = [idx for idx, gene in enumerate(gene_vocab) if gene in name_to_src_idx]
+  matched_src_idx = [name_to_src_idx[gene_vocab[idx]] for idx in matched_vocab_idx]
+  src_idx_to_new_idx = {int(src_idx): int(new_idx) for src_idx, new_idx in zip(matched_src_idx, matched_vocab_idx)}
+
+  if sp.issparse(adata.X):
+    x_src = adata.X.tocsr()[:, matched_src_idx].tocoo()
+    new_cols = np.asarray(matched_vocab_idx, dtype=np.int64)[x_src.col]
+    x_aligned = sp.csr_matrix(
+      (x_src.data, (x_src.row, new_cols)),
+      shape=(adata.n_obs, len(gene_vocab)),
+      dtype=adata.X.dtype,
+    )
+  else:
+    x_src = np.asarray(adata.X)
+    x_aligned = np.zeros((adata.n_obs, len(gene_vocab)), dtype=x_src.dtype)
+    x_aligned[:, matched_vocab_idx] = x_src[:, matched_src_idx]
+
+  orig_var = adata.var.copy()
+  orig_var["_orig_var_name"] = orig_var.index.astype(str)
+  var_by_gene = orig_var.set_index(orig_var["gene_name"].astype(str), drop=False)
+
+  new_var_rows = []
+  new_var_index = []
+  index_name = adata.var.index.name
+  for gene in gene_vocab:
+    if gene in var_by_gene.index:
+      row = var_by_gene.loc[gene]
+      src_var_name = str(row["_orig_var_name"])
+      row = row.drop(labels=["_orig_var_name"])
+      new_var_rows.append(row.to_dict())
+      new_var_index.append(src_var_name)
+    else:
+      new_var_rows.append({
+        "gene_name": gene,
+        "feature_id": gene,
+        "feature_type": "synthetic_zero_fill",
+      })
+      new_var_index.append(gene)
+
+  var = pd.DataFrame(new_var_rows, index=pd.Index(new_var_index, name=index_name))
+  aligned = ad.AnnData(
+    X=x_aligned,
+    obs=adata.obs.copy(),
+    var=var,
+    uns=deepcopy(adata.uns),
+    obsm=deepcopy(getattr(adata, "obsm", {})),
+    varm=deepcopy(getattr(adata, "varm", {})),
+    layers=deepcopy(getattr(adata, "layers", {})),
+  )
+  aligned.obs_names = adata.obs_names.copy()
+
+  for key in ["non_zeros_gene_idx", "non_dropout_gene_idx"]:
+    if key in aligned.uns:
+      remapped = {}
+      for pert_name, old_idx in aligned.uns[key].items():
+        new_idx = [src_idx_to_new_idx[int(i)] for i in np.asarray(old_idx).tolist() if int(i) in src_idx_to_new_idx]
+        remapped[pert_name] = np.asarray(sorted(set(new_idx)), dtype=np.int64)
+      aligned.uns[key] = remapped
+
+  return aligned, {
+    "source_gene_count": int(adata.n_vars),
+    "target_gene_count": int(len(gene_vocab)),
+    "matched_gene_count": int(len(matched_src_idx)),
+    "dropped_gene_count": int(adata.n_vars - len(matched_src_idx)),
+    "zero_filled_gene_count": int(len(gene_vocab) - len(matched_src_idx)),
+  }
+
+
+def _ensure_scfoundation_ready_dataset(dataset_name: str, pert_data_folder: Path) -> str:
+  import anndata as ad
+
+  dataset_dir = pert_data_folder / dataset_name
+  adata_path = dataset_dir / "perturb_processed.h5ad"
+  if not adata_path.exists():
+    return str(dataset_dir)
+
+  gene_vocab = _load_scfoundation_gene_vocab()
+  adata = ad.read_h5ad(adata_path)
+  if not _needs_scfoundation_alignment(adata, gene_vocab):
+    return str(dataset_dir)
+
+  aligned_name = f"{dataset_name}{SCFOUNDATION_ALIGNED_SUFFIX}"
+  aligned_dir = pert_data_folder / aligned_name
+  aligned_dir.mkdir(parents=True, exist_ok=True)
+  aligned_h5ad_path = aligned_dir / "perturb_processed.h5ad"
+  metadata_path = aligned_dir / "scfoundation_alignment.json"
+
+  source_signature = {
+    "alignment_version": SCFOUNDATION_ALIGNMENT_VERSION,
+    "source_dataset": dataset_name,
+    "source_path": str(adata_path),
+    "source_mtime_ns": int(adata_path.stat().st_mtime_ns),
+    "source_size": int(adata_path.stat().st_size),
+    "gene_vocab_path": str(SCFOUNDATION_GENE_VOCAB_PATH),
+    "gene_vocab_size": int(len(gene_vocab)),
+  }
+
+  if aligned_h5ad_path.exists() and metadata_path.exists():
+    try:
+      with open(metadata_path, "r", encoding="utf-8") as handle:
+        metadata = json.load(handle)
+      if all(metadata.get(k) == v for k, v in source_signature.items()):
+        print(f"[run_scfoundation] Using cached scFoundation-aligned dataset: {aligned_name}")
+        return str(aligned_dir)
+    except Exception:
+      pass
+
+  aligned_adata, stats = _align_adata_to_gene_vocab(adata, gene_vocab)
+  aligned_adata.write_h5ad(aligned_h5ad_path)
+
+  src_go_csv = dataset_dir / "go.csv"
+  dst_go_csv = aligned_dir / "go.csv"
+  if src_go_csv.exists() and not dst_go_csv.exists():
+    shutil.copy2(src_go_csv, dst_go_csv)
+
+  metadata = dict(source_signature)
+  metadata.update(stats)
+  with open(metadata_path, "w", encoding="utf-8") as handle:
+    json.dump(metadata, handle, indent=2)
+
+  print(
+    "[run_scfoundation] Built scFoundation-aligned dataset "
+    f"{aligned_name}: matched={stats['matched_gene_count']}, "
+    f"dropped={stats['dropped_gene_count']}, zero_fill={stats['zero_filled_gene_count']}"
+  )
+  return str(aligned_dir)
 
 
 def _redirect_stdio_to_log(log_file: str) -> None:
@@ -73,6 +244,37 @@ parser.add_argument('--dataset_name', dest='dataset_name', action='store', requi
 parser.add_argument('--test_train_config_id', dest = 'test_train_config_id', action = 'store', required = True, help = "The ID of the test/train/holdout run")
 parser.add_argument('--epochs', dest = 'epochs', action = 'store', help = "How many epochs are run", default = 15, type = int)
 parser.add_argument('--seed', dest = 'seed', action = 'store', help = "The seed of the run", default = 1, type = int)
+parser.add_argument(
+    '--batch_size',
+    type=int,
+    default=DEFAULT_SCF_BATCH_SIZE,
+    help='Training batch size. Default matches the normal scFoundation training setup.',
+)
+parser.add_argument(
+    '--test_batch_size',
+    type=int,
+    default=DEFAULT_SCF_TEST_BATCH_SIZE,
+    help='Validation/test batch size. Default matches the normal scFoundation training setup.',
+)
+parser.add_argument(
+    '--accumulation_steps',
+    type=int,
+    default=DEFAULT_SCF_ACCUMULATION_STEPS,
+    help='Gradient accumulation steps. Default matches the normal scFoundation training setup.',
+)
+parser.add_argument(
+    '--lr',
+    type=float,
+    default=DEFAULT_SCF_LR,
+    help='Learning rate. Default matches the normal scFoundation training setup.',
+)
+parser.add_argument(
+    '--finetune_method',
+    type=str,
+    default=DEFAULT_SCF_FINETUNE_METHOD,
+    choices=['frozen', 'finetune_lr_1', 'none'],
+    help='How to use the pretrained scFoundation encoder. Default matches the normal scFoundation training setup.',
+)
 
 parser.add_argument("--working_dir", dest = "working_dir", action='store', required = True, help = "The directory that contains the params, results, scripts etc.")
 parser.add_argument("--result_id", dest = "result_id", action='store', required = True, help = "The result_id")
@@ -97,6 +299,18 @@ parser.add_argument(
     help='If >0, print prediction progress every N conditions (useful when predict looks stuck).'
 )
 parser.add_argument('--predict_after_train', action='store_true', help='If set, run prediction/eval right after training.')
+parser.add_argument(
+    '--predict_num_samples',
+    type=int,
+    default=DEFAULT_SCF_PREDICT_NUM_SAMPLES,
+    help='Number of control cells to average per perturbation during prediction.',
+)
+parser.add_argument(
+    '--predict_batch_size',
+    type=int,
+    default=DEFAULT_SCF_PREDICT_BATCH_SIZE,
+    help='Prediction dataloader batch size.',
+)
 parser.add_argument('--debug_hang_seconds', type=int, default=0, help='If >0, dump stack traces when no step log is printed for this many seconds.')
 parser.add_argument('--debug_hang_dump_path', type=str, default='', help='Optional file path for hang dumps. Defaults to results/<result_id>_hang_traces.txt')
 
@@ -164,7 +378,8 @@ pert_data = PertData(pert_data_folder)
 if args.dataset_name in ['norman', 'adamson', 'dixit']:
   pert_data.load(args.dataset_name)
 else:
-  pert_data.load(data_path = "data/gears_pert_data/" + args.dataset_name)
+  scfoundation_ready_path = _ensure_scfoundation_ready_dataset(args.dataset_name, pert_data_folder)
+  pert_data.load(data_path = scfoundation_ready_path)
 
 with open(args.working_dir + "/results/" + args.test_train_config_id) as json_file:
   set2conditions = json.load(json_file)
@@ -181,20 +396,21 @@ pert_data.subgroup = None
 pert_data.seed = 1
 pert_data.train_gene_set_size = 0.75
 
-# These are based on https://github.com/biomap-research/scFoundation/blob/69b0710660aded7e071d4f67e9f3ac03b096e587/GEARS/run_sh/run_singlecell_maeautobin-0.1B-res0-norman.sh
-batch_size=6
-accumulation_steps=5
-test_batch_size=6
+# These defaults are the normal scFoundation training profile from the upstream
+# Norman script. Low-memory runs should override them explicitly at the CLI.
+batch_size=args.batch_size
+accumulation_steps=args.accumulation_steps
+test_batch_size=args.test_batch_size
 hidden_size=512
 model_type="maeautobin"
 bin_set="autobin_resolution_append"
 # This file was downloaded separately from https://hopebio2020-my.sharepoint.com/:f:/g/personal/dongsheng_biomap_com/Eh22AX78_AVDv6k6v4TZDikBXt33gaWXaz27U9b1SldgbA
 singlecell_model_path="/home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/scFoundation/model/models/models.ckpt"
-finetune_method="frozen"
+finetune_method=None if args.finetune_method == 'none' else args.finetune_method
 train_gene_set_size=0.75
 mode="v1"
 highres=0 # 0
-lr=0.01 #1e-3
+lr=args.lr #1e-3
 
 if args.cpu_threads and args.cpu_threads > 0:
   import torch
@@ -303,9 +519,23 @@ finally:
 # This is only for debug runs where the user wants to quickly see JSON output.
 early_stopped = bool(args.max_train_steps and args.max_train_steps > 0)
 
+if early_stopped and not args.predict_after_train:
+  print("[run_scfoundation] Early-stop debug run finished; skipping prediction.")
+  session_info.show()
+  print("Python done")
+  raise SystemExit(0)
+
 
 tmp_out_dir = tempfile.mkdtemp()
 gears_model.save_model(f'{tmp_out_dir}/gears_model')
+
+if args.device == 'cuda':
+  import torch
+  try:
+    gears_model.model = gears_model.model.cpu()
+  except Exception:
+    pass
+  torch.cuda.empty_cache()
 
 
 conds = pert_data.adata.obs["condition"].cat.remove_unused_categories().cat.categories.tolist()
@@ -336,7 +566,11 @@ for i, cond in enumerate(split_conds):
   label = '+'.join(cond) if len(cond) else 'ctrl'
   try:
     _t1 = _time.time() if args.predict_progress_every > 0 else None
-    pred_dict = gears_model.predict([cond])
+    pred_dict = gears_model.predict(
+      [cond],
+      num_samples=args.predict_num_samples,
+      batch_size=args.predict_batch_size,
+    )
     if args.predict_progress_every > 0:
       dt1 = _time.time() - _t1
       print(f"[run_scfoundation] predict done {i}/{len(split_conds)} dt={dt1:.2f}s cond={label}")

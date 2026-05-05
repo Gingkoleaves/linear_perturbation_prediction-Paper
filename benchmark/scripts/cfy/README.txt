@@ -61,13 +61,34 @@ CFY:
 
 若 baseline 已存在，仅跑 CFY:
   python3 src/run_gears_cfy_pipeline.py \
-    --dataset_name norman \
-    --test_train_config_id seed_1_norman_split \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
     --working_dir . \
-    --baseline_result_id gears_norman_e20 \
-    --cfy_result_id gears_norman_e20_cfy \
-    --cfy_epochs 5 \
+    --baseline_result_id gears_gse220974_e20 \
+    --cfy_result_id gears_gse220974_e20_cfy_overall_best_v2 \
+    --cfy_epochs 10 \
     --skip_baseline
+
+gse220974 推荐 preset:
+  整体 MSE 最优:
+  python3 src/run_gears_cfy_plugin.py \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
+    --working_dir . \
+    --base_result_id gears_gse220974_e20 \
+    --result_id gears_gse220974_e20_cfy_overall_best_v2 \
+    --model_name gears \
+    --preset gears_gse220974_overall
+
+  非 additive 类更稳（历史配置，当前结果目录未保留）:
+  python3 src/run_gears_cfy_plugin.py \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
+    --working_dir . \
+    --base_result_id gears_gse220974_e20 \
+    --result_id gears_gse220974_e20_cfy_nonadd_best \
+    --model_name gears \
+    --preset gears_gse220974_nonadd
 
 ------------------------------------------------------------
 Additive + CFY
@@ -77,25 +98,29 @@ Additive + CFY
 
 baseline（如需重跑）:
   python3 src/run_additive_model.py \
-    --dataset_name norman \
-    --test_train_config_id seed_1_norman_split \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
     --working_dir . \
-    --result_id addi_norman_results
+    --result_id addi_gse220974_results
 
-CFY:
-  bash scripts/cfy/run_additive_cfy_plugin.sh \
-    norman seed_1_norman_split \
-    addi_norman_results addi_norman_results_cfy 5
-
-等价 Python 入口:
+当前最优 Python 入口:
   python3 src/run_additive_cfy_plugin.py \
-    --dataset_name norman \
-    --test_train_config_id seed_1_norman_split \
+    --dataset_name gse220974 \
+    --test_train_config_id seed_1_gse220974_split \
     --working_dir . \
-    --base_result_id addi_norman_results \
-    --result_id addi_norman_results_cfy \
-    --epochs 5 \
-    --model_name additive
+    --base_result_id addi_gse220974_results \
+    --result_id addi_gse220974_cfy_regonly_e20 \
+    --model_name additive \
+    --disable_label_loss \
+    --epochs 20 \
+    --lr 1e-3 \
+    --weight_decay 1e-4 \
+    --conditions_per_batch 4 \
+    --gene_embedding_dim 128 \
+    --hidden_dim 128 \
+    --dropout 0.1 \
+    --cls_loss_weight 0 \
+    --additive_anchor_weight 0
 
 ------------------------------------------------------------
 其他
@@ -112,7 +137,25 @@ GEARS forward embeddings:
     --cfy_result_dir results/gears_norman_e20_cu128_cfy_e5 \
     --ground_truth_dir results/ground_truth_norman_results
 
-  说明:
+  conda activate gears_env2
+  python3 src/evaluate_predictions_mse.py \
+    --base_result_dir results/gears_gse220974_e20 \
+    --cfy_result_dir results/gears_gse220974_e20_cfy_overall_best_v2 \
+    --ground_truth_dir results/ground_truth_gse220974_results
+
+ python3 src/evaluate_predictions_mse.py \
+    --base_result_dir results/gears_gse220974_e20 \
+    --cfy_result_dir results/gears_gse220974_e20_cfy_overall_best_v2 \
+    --ground_truth_dir results/ground_truth_gse220974_results \
+    --label_csv data/gears_pert_data/gse220974/perturb_processed_with_coeffect_gene_level.csv
+
+ python3 src/evaluate_predictions_mse.py \
+    --base_result_dir results/addi_gse220974_results \
+    --cfy_result_dir results/addi_gse220974_cfy_regonly_e20 \
+    --ground_truth_dir results/ground_truth_gse220974_results \
+    --label_csv data/gears_pert_data/gse220974/perturb_processed_with_coeffect_gene_level.csv
+
+  说明: 
   - 默认读取每个目录下的 `all_predictions.json`
   - 默认会统一 condition key（`_`/`+`、去掉 `ctrl`、双扰动排序）
   - 如需关闭 key 归一化，追加 `--no_normalize_keys`

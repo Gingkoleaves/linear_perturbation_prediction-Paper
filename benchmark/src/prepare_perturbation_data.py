@@ -1,14 +1,19 @@
 import argparse
 from pathlib import Path
 import json 
+import os
 
 import numpy as np
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mpl")
+os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
 import scanpy as sc
 import pickle
 import session_info
 import urllib.request
 import zipfile
 import shutil
+import pandas as pd
+from scipy import io as spio
 
 
 
@@ -35,6 +40,65 @@ def normalize_condition_names(obs):
   ser = pd.Series(["+".join(sorted(x.split("+"))) for x in obs['condition']], dtype = "category", index = obs.index)
   obs['condition'] = ser
   return obs
+
+def canon_gse220974_condition(label):
+  label = str(label)
+  if label == "Non-Targeting":
+    return "ctrl"
+
+  genes = []
+  for token in label.split("|"):
+    token = token.strip()
+    if (not token) or token == "Non-Targeting":
+      continue
+    genes.append(token.split("-")[0])
+
+  genes = sorted(set(genes))
+  if len(genes) == 0:
+    return "ctrl"
+  if len(genes) == 1:
+    return genes[0] + "+ctrl"
+  return "+".join(genes)
+
+def read_nonempty_lines(path):
+  return [line.strip() for line in path.read_text(encoding = "utf8").splitlines() if line.strip()]
+
+def build_gse220974_adata():
+  input_dir = Path(os.getenv("GSE220974_DIR", "/home/gingkoleaves/Documents/GSE datats/GSE220974"))
+  matrix = spio.mmread(input_dir / "GSE220974_RNA_matrix.mtx").tocsr().transpose().tocsr()
+  barcodes = read_nonempty_lines(input_dir / "GSE220974_RNA_barcodes.tsv")
+  features = pd.read_csv(
+    input_dir / "GSE220974_RNA_features.tsv",
+    sep = "\t",
+    header = None,
+    names = ["feature_id", "gene_name", "feature_type"]
+  )
+  metadata = pd.read_csv(input_dir / "GSE220974_K562_cell_metadata.csv").set_index("cell").reindex(barcodes)
+
+  if metadata.isna().any().any():
+    missing = int(metadata.isna().any(axis = 1).sum())
+    raise ValueError(f"Metadata missing for {missing} barcodes after reindex.")
+
+  if matrix.shape != (len(barcodes), len(features)):
+    raise ValueError(
+      f"RNA matrix shape {matrix.shape} does not match "
+      f"{len(barcodes)} barcodes x {len(features)} features."
+    )
+
+  obs = metadata.copy()
+  obs.index.name = "cell"
+  obs["cell_type"] = "K562"
+  obs["condition"] = obs["guide_group2"].astype(str).map(canon_gse220974_condition)
+  obs["total_count"] = np.asarray(matrix.sum(axis = 1)).ravel().astype(np.float32)
+
+  var = features.copy()
+  var.index = pd.Index(var["feature_id"].astype(str), name = "gene_id")
+  var["gene_name"] = var["gene_name"].astype(str)
+
+  adata = sc.AnnData(X = matrix, obs = obs, var = var)
+  adata.obs_names_make_unique()
+  adata.var_names_make_unique()
+  return adata
 # -------------------------
 
 pert_data_folder = Path("data/gears_pert_data")
@@ -66,6 +130,10 @@ else:
   from gears import PertData, GEARS
   import gears.version
   assert gears.version.__version__ == '0.1.2'
+  if args.dataset_name == "gse220974" and not Path("data/gears_pert_data/" + args.dataset_name + "/perturb_processed.h5ad").exists():
+    pert_data = PertData(pert_data_folder)
+    adata = build_gse220974_adata()
+    pert_data.new_data_process(dataset_name=args.dataset_name, adata=adata)
 
 
 if args.dataset_name == "norman":
@@ -107,6 +175,22 @@ elif args.dataset_name == "norman_from_scfoundation":
   double_training = np.random.choice(double_pert, size=len(double_pert) // 2, replace=False).tolist()
   double_test = np.setdiff1d(double_pert, double_training).tolist()
   double_test =  np.random.choice(double_test, size = len(double_test)//2, replace = False).tolist()
+  double_holdout = np.setdiff1d(double_pert, double_training + double_test).tolist()
+  set2conditions = {
+      "train": single_pert + double_training,
+      "test": double_test,
+      "val": double_holdout
+  }
+elif args.dataset_name == "gse220974":
+  pert_data = PertData(pert_data_folder)
+  pert_data.load(data_path = "data/gears_pert_data/" + args.dataset_name)
+  gse220974_adata = pert_data.adata
+  conds = gse220974_adata.obs['condition'].cat.remove_unused_categories().cat.categories.tolist()
+  single_pert = [x for x in conds if 'ctrl' in x]
+  double_pert = np.setdiff1d(conds, single_pert).tolist()
+  double_training = np.random.choice(double_pert, size = len(double_pert) // 2, replace = False).tolist()
+  double_test = np.setdiff1d(double_pert, double_training).tolist()
+  double_test = np.random.choice(double_test, size = len(double_test) // 2, replace = False).tolist()
   double_holdout = np.setdiff1d(double_pert, double_training + double_test).tolist()
   set2conditions = {
       "train": single_pert + double_training,

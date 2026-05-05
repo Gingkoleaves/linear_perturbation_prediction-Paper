@@ -14,6 +14,7 @@ SPLIT_ID=${2:-seed_1_norman_split}
 BASE_RESULT_ID=${3:-gears_baseline}
 RESULT_ID=${4:-gears_cfy_plugin}
 EPOCHS=${5:-5}
+shift $(( $# >= 5 ? 5 : $# ))
 
 cd "$(dirname "$0")/../.."
 
@@ -24,7 +25,8 @@ python3 src/run_gears_cfy_plugin.py \
   --base_result_id "${BASE_RESULT_ID}" \
   --result_id "${RESULT_ID}" \
   --epochs "${EPOCHS}" \
-  --model_name gears
+  --model_name gears \
+  "$@"
 
 echo "Wrote: results/${RESULT_ID}/all_predictions.json"
 echo "Wrote: results/${RESULT_ID}/baseline_all_predictions.json"

@@ -44,6 +44,21 @@ def _build_arg_parser(default_model_name: str = "unknown") -> argparse.ArgumentP
     parser.add_argument("--model_name", default=default_model_name, help="Metadata only")
     parser.add_argument("--label_csv", help="Optional gene-level coeffect CSV")
     parser.add_argument(
+        "--disable_label_loss",
+        action="store_true",
+        help="Ignore gene-level coeffect labels even if a label CSV exists.",
+    )
+    parser.add_argument(
+        "--preset",
+        default="none",
+        choices=[
+            "none",
+            "gears_gse220974_overall",
+            "gears_gse220974_nonadd",
+        ],
+        help="Apply a validated hyperparameter preset before training.",
+    )
+    parser.add_argument(
         "--embedding_source",
         default="auto",
         help="learned, scfoundation, scgpt, geneformer, or auto",
@@ -60,6 +75,25 @@ def _build_arg_parser(default_model_name: str = "unknown") -> argparse.ArgumentP
     parser.add_argument("--gene_embedding_dim", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--cls_loss_weight", type=float, default=0.35)
+    parser.add_argument("--additive_anchor_weight", type=float, default=0.40)
+    parser.add_argument("--cls_focal_gamma", type=float, default=2.0)
+    parser.add_argument(
+        "--class_weights",
+        default="1.0,2.5,3.0,2.0,1.5",
+        help="Comma-separated class weights for Additive,Synergy,Buffering,Opposite,Other.",
+    )
+    parser.add_argument(
+        "--regression_class_weights",
+        default="1.0,1.0,1.0,1.0,1.0",
+        help="Comma-separated regression weights for Additive,Synergy,Buffering,Opposite,Other.",
+    )
+    parser.add_argument(
+        "--unlabeled_reg_weight",
+        type=float,
+        default=1.0,
+        help="Regression weight for unlabeled targets.",
+    )
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return parser
@@ -190,12 +224,65 @@ def _to_jsonable(value):
     return value
 
 
+def _parse_class_weights(raw: str) -> list[float]:
+    weights = [float(token.strip()) for token in str(raw).split(",") if token.strip()]
+    if not weights:
+        raise ValueError("--class_weights must contain at least one numeric value.")
+    return weights
+
+
+def _apply_preset(args: argparse.Namespace) -> argparse.Namespace:
+    if args.preset == "none":
+        return args
+
+    if args.preset == "gears_gse220974_overall":
+        args.embedding_source = "learned"
+        args.freeze_gene_embeddings = False
+        args.disable_label_loss = True
+        args.epochs = 10
+        args.lr = 1e-3
+        args.weight_decay = 1e-4
+        args.conditions_per_batch = 4
+        args.gene_embedding_dim = 128
+        args.hidden_dim = 128
+        args.dropout = 0.1
+        args.cls_loss_weight = 0.0
+        args.additive_anchor_weight = 0.0
+        args.cls_focal_gamma = 2.0
+        args.class_weights = "1.0,2.5,3.0,2.0,1.5"
+        args.regression_class_weights = "1.0,1.0,1.0,1.0,1.0"
+        args.unlabeled_reg_weight = 1.0
+        return args
+
+    if args.preset == "gears_gse220974_nonadd":
+        args.embedding_source = "learned"
+        args.freeze_gene_embeddings = False
+        args.disable_label_loss = False
+        args.epochs = 20
+        args.lr = 1e-3
+        args.weight_decay = 1e-4
+        args.conditions_per_batch = 4
+        args.gene_embedding_dim = 128
+        args.hidden_dim = 128
+        args.dropout = 0.1
+        args.cls_loss_weight = 0.1
+        args.additive_anchor_weight = 0.05
+        args.cls_focal_gamma = 1.0
+        args.class_weights = "1.0,1.5,1.5,1.2,1.0"
+        args.regression_class_weights = "1.0,1.0,1.0,1.0,1.0"
+        args.unlabeled_reg_weight = 1.0
+        return args
+
+    raise ValueError(f"Unknown preset: {args.preset}")
+
+
 def main(default_model_name: str = "unknown") -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     args = _parse_args(default_model_name=default_model_name)
+    args = _apply_preset(args)
 
     base_result_dir = _resolve_base_result_dir(args)
     output_dir = Path(args.working_dir) / "results" / args.result_id
@@ -214,7 +301,10 @@ def main(default_model_name: str = "unknown") -> None:
         set2conditions = json.load(handle)
 
     label_csv = Path(args.label_csv).resolve() if args.label_csv else _default_label_csv(args.dataset_name)
-    if label_csv.exists():
+    if args.disable_label_loss:
+        logger.info("disable_label_loss=True, skipping gene-level coeffect supervision.")
+        label_arrays = None
+    elif label_csv.exists():
         label_arrays = load_condition_label_arrays(str(label_csv), num_genes=len(gene_names))
     else:
         logger.warning("Gene-level coeffect CSV not found at %s. Training without classification loss.", label_csv)
@@ -237,12 +327,21 @@ def main(default_model_name: str = "unknown") -> None:
         device=args.device,
         pretrained_gene_embeddings=pretrained_gene_embeddings,
         trainable_gene_embeddings=not args.freeze_gene_embeddings,
+        cfy_config={
+            "cls_loss_weight": args.cls_loss_weight,
+            "additive_anchor_weight": args.additive_anchor_weight,
+            "cls_focal_gamma": args.cls_focal_gamma,
+            "class_weights": _parse_class_weights(args.class_weights),
+            "regression_class_weights": _parse_class_weights(args.regression_class_weights),
+            "unlabeled_reg_weight": args.unlabeled_reg_weight,
+        },
     )
 
     history = adaptor.fit(
         base_predictions=base_predictions,
         truth_by_condition=truth_by_condition,
         train_conditions=set2conditions.get("train", []),
+        val_conditions=set2conditions.get("val", []),
         label_arrays=label_arrays,
         epochs=args.epochs,
         lr=args.lr,
@@ -270,6 +369,8 @@ def main(default_model_name: str = "unknown") -> None:
                 "model_name": args.model_name,
                 "embedding_source": embedding_source,
                 "freeze_gene_embeddings": args.freeze_gene_embeddings,
+                "preset": args.preset,
+                "disable_label_loss": args.disable_label_loss,
                 "dataset_name": args.dataset_name,
                 "epochs": args.epochs,
                 "lr": args.lr,
@@ -278,9 +379,15 @@ def main(default_model_name: str = "unknown") -> None:
                 "gene_embedding_dim": args.gene_embedding_dim,
                 "hidden_dim": args.hidden_dim,
                 "dropout": args.dropout,
+                "cls_loss_weight": args.cls_loss_weight,
+                "additive_anchor_weight": args.additive_anchor_weight,
+                "cls_focal_gamma": args.cls_focal_gamma,
+                "class_weights": _parse_class_weights(args.class_weights),
+                "regression_class_weights": _parse_class_weights(args.regression_class_weights),
+                "unlabeled_reg_weight": args.unlabeled_reg_weight,
                 "seed": args.seed,
                 "device": args.device,
-                "label_csv": str(label_csv) if label_csv.exists() else None,
+                "label_csv": None if args.disable_label_loss else (str(label_csv) if label_csv.exists() else None),
                 }
             ),
             handle,

@@ -1,0 +1,90 @@
+Context snapshot (saved by Hermes/Codex CLI)
+Date: 2026-05-02
+Repo root: /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper
+
+Goal
+- Install environments for GEARS / scFoundation / scGPT per repo README
+- Run the three models on Norman + local GSE133344 h5ad (path under /home/gingkoleaves/Documents/GSE_data or similarly named dir)
+
+System / environment checks (repro commands)
+- OS/kernel:
+  - uname -a
+  - cat /etc/os-release
+- Conda/mamba:
+  - which conda
+  - which mamba
+  - conda --version
+  - mamba --version
+- GPU/driver:
+  - nvidia-smi
+  - lspci | rg -i 'nvidia|vga|3d|display'
+  - ls -l /dev/nvidia*
+  - cat /proc/driver/nvidia/version
+
+GPU status summary (updated)
+- Hardware: NVIDIA GeForce RTX 5090 Laptop GPU (compute capability sm_120).
+- Driver present; CUDA visible to PyTorch: torch.cuda.is_available() -> True; device_count -> 1.
+
+GEARS env setup (completed)
+- Create/update env from repo YAML:
+  - cd /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper
+  - mamba env update -f benchmark/conda_environments/gears_env2.yml
+- Verify core imports:
+  - source ~/miniconda3/etc/profile.d/conda.sh
+  - conda activate gears_env2
+  - python -c "import gears, torch; import gears.version; print('gears',gears.version.__version__); print('torch',torch.__version__); print('cuda_available', torch.cuda.is_available())"
+
+Dependency issue encountered (resolved earlier)
+- torchvision import caused failure during earlier checks; to unblock import chain, torchvision was removed:
+  - source ~/miniconda3/etc/profile.d/conda.sh && conda activate gears_env2
+  - pip uninstall -y torchvision
+
+Norman data preparation for GEARS (completed)
+- Prereq directory fix:
+  - cd /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/benchmark
+  - mkdir -p data/gears_pert_data
+- Run preparation script:
+  - source ~/miniconda3/etc/profile.d/conda.sh && conda activate gears_env2
+  - cd /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/benchmark
+  - python src/prepare_perturbation_data.py \
+      --dataset_name norman \
+      --working_dir /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/benchmark \
+      --result_id norman_split_seed1.json \
+      --seed 1
+
+GEARS GPU arch incompatibility (was blocking; now fixed)
+- Old torch: 2.3.0+cu121 only supported up to sm_90; crashed on RTX 5090 (sm_120) with:
+  - RuntimeError: CUDA error: no kernel image is available for execution on the device
+
+PyTorch upgrade to support sm_120 (completed)
+- In gears_env2 installed:
+  - torch 2.11.0+cu128
+  - torchvision 0.26.0+cu128
+  - torchaudio 2.11.0+cu128
+- Verification:
+  - torch.cuda.get_arch_list() includes 'sm_120'
+  - torch.version.cuda == 12.8
+
+GEARS smoke test (completed)
+- Command:
+  - source ~/miniconda3/etc/profile.d/conda.sh && conda activate gears_env2
+  - cd /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/benchmark
+  - python src/run_gears.py \
+      --dataset_name norman \
+      --test_train_config_id norman_split_seed1.json \
+      --epochs 1 \
+      --working_dir /home/gingkoleaves/Documents/linear_perturbation_prediction-Paper/benchmark \
+      --result_id gears_norman_test_cu128
+- Observed: training+validation+testing completed on CUDA.
+
+Workspace state (observed earlier)
+- git status showed untracked dirs (generated artifacts):
+  - benchmark/data/
+  - benchmark/results/
+  - cfy_plugin/
+
+scFoundation GEARS NaN issue (fixed)
+- Symptom: training loss became NaN early on CUDA; root cause was NaNs coming out of scFoundation single-cell encoder (MAEAutobinencoder) because input lacked the required appended `total_count` token.
+- Repro check (pre-fix): calling `gears_model.model.singlecell_model(pre_in)` with `pre_in` shaped `[num_graphs, num_genes]` produced NaNs.
+- Fix: in `scFoundation/GEARS/gears/model.py`, when `bin_set == 'autobin_resolution_append'` and the batched graph provides exactly `num_genes` tokens, append `total_count = sum(gene_expr)` to form `[num_graphs, num_genes+1]` before feeding the encoder.
+- Verification: `gears_model.model(batch)` now returns finite outputs; a short training run with `--stop_on_nan --max_train_steps 20` produces finite loss (e.g. `Epoch 1 Step 1 Train Loss: 0.2679`).
