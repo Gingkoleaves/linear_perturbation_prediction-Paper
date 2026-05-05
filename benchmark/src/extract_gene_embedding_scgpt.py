@@ -8,10 +8,6 @@ import numpy as np
 import pandas as pd
 import json 
 
-from torchtext.vocab import Vocab
-from torchtext._torchtext import (
-    Vocab as VocabPybind,
-)
 
 import scgpt as scg
 from scgpt.tasks import GeneEmbedding
@@ -44,7 +40,9 @@ n_input_bins = n_bins
 
 
 # Specify model path; here we load the pre-trained scGPT blood model
-load_model = "/home/ahlmanne/huber/data/scgpt_models/scGPT_human"
+# Path to a pretrained scGPT model directory (must contain args.json, best_model.pt, vocab.json).
+# Override via env var SCGPT_MODEL_DIR to avoid hardcoding machine-specific paths.
+load_model = os.environ.get("SCGPT_MODEL_DIR", str(Path(__file__).resolve().parent.parent / "models" / "scgpt" / "scGPT_human"))
 model_dir = Path(load_model)
 model_config_file = model_dir / "args.json"
 model_file = model_dir / "best_model.pt"

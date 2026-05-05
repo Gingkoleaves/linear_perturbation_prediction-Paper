@@ -7,6 +7,7 @@ import json
 import tempfile
 import argparse
 import session_info
+import os
 
 import cpa
 import scanpy as sc
@@ -133,8 +134,11 @@ model = cpa.CPA(adata=new_adata,
                )
 
 with tempfile.TemporaryDirectory() as tmp_dir:
+  # RTX 5090 (sm_120) is often unsupported by many torch wheels.
+  # Default to CPU unless explicitly requested.
+  use_gpu = os.environ.get("CPA_DEVICE", "cpu").lower() in {"cuda", "gpu"}
   model.train(max_epochs=2000,
-              use_gpu=True,
+              use_gpu=use_gpu,
               batch_size=2048,
               plan_kwargs=trainer_params,
               early_stopping_patience=5,

@@ -8,6 +8,7 @@ import time
 import warnings
 import copy
 import os
+import sys
 
 
 # Import AnnData object with scanpy
@@ -18,10 +19,6 @@ from pathlib import Path
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torchtext.vocab import Vocab
-from torchtext._torchtext import (
-    Vocab as VocabPybind,
-)
 from torch_geometric.loader import DataLoader
 import scgpt as scg
 from scgpt.model import TransformerGenerator
@@ -39,21 +36,42 @@ import session_info
 print("Hello from python")
 
 
+def _ts() -> str:
+  return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _mark(msg: str) -> None:
+  print(f"[run_scgpt][{_ts()}] {msg}", flush=True)
+
+
 parser = argparse.ArgumentParser(description='Run scGPT')
 parser.add_argument('--dataset_name', dest='dataset_name', action='store', required = True, help='The id of a file in output/results')
 parser.add_argument('--test_train_config_id', dest = 'test_train_config_id', action = 'store', required = True, help = "The ID of the test/train/holdout run")
 parser.add_argument('--patience', dest = 'patience', action = 'store', help = "How many epochs with increasing error are allowed", default = 1, type = int)
 parser.add_argument('--epochs', dest = 'epochs', action = 'store', help = "How many epochs are run", default = 15, type = int)
 parser.add_argument('--pool_size', dest = 'pool_size', action = 'store', help = "Number of cells used for the prediction", default = 100, type = int)
+parser.add_argument('--max_train_steps', dest='max_train_steps', action='store', help='If >0, stop after this many training steps (for quick debugging).', default=0, type=int)
+parser.add_argument('--predict_max_conds', dest='predict_max_conds', action='store', help='If >0 and max_train_steps > 0, only predict this many non-ctrl conditions (plus ctrl if present) to quickly produce JSON during debug.', default=0, type=int)
+parser.add_argument('--predict_progress_every', dest='predict_progress_every', action='store', help='If >0, print prediction progress every N conditions.', default=0, type=int)
 parser.add_argument('--seed', dest = 'seed', action = 'store', help = "The seed of the run", default = 1, type = int)
 
 parser.add_argument("--working_dir", dest = "working_dir", action='store', required = True, help = "The directory that contains the params, results, scripts etc.")
 parser.add_argument("--result_id", dest = "result_id", action='store', required = True, help = "The result_id")
 args = parser.parse_args()
+
+# Ensure we see progress logs quickly when this script is run via conda run.
+try:
+  sys.stdout.reconfigure(line_buffering=True)
+  sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+  pass
+
 # args = parser.parse_args(["--dataset_name", "norman",
 #     "--test_train_config_id", "8443ed21d2ac4-f8716281f960b", "--working_dir",
 #     "/scratch/ahlmanne/perturbation_prediction_benchmark", "--result_id", "0"])
 print(args)
+
+_mark("parsed args")
 
 out_dir = args.working_dir + "/results/" + args.result_id
 
@@ -99,8 +117,14 @@ MVC = False  # Masked value prediction for cell embedding
 ECS = False  # Elastic cell similarity objective
 cell_emb_style = "cls"
 mvc_decoder_style = "inner product, detach"
-amp = True
-load_model = "/home/ahlmanne/huber/data/scgpt_models/scGPT_human"
+# device is configured below via SCGPT_DEVICE (default cpu)
+amp = False
+# Path to a pretrained scGPT model directory (must contain args.json, best_model.pt, vocab.json).
+# Override via env var SCGPT_MODEL_DIR to avoid hardcoding machine-specific paths.
+load_model = os.environ.get(
+    "SCGPT_MODEL_DIR",
+    str(Path(__file__).resolve().parent.parent / "models" / "scgpt_human"),
+)
 load_param_prefixs = [
     "encoder",
     "value_encoder",
@@ -109,8 +133,8 @@ load_param_prefixs = [
 
 # settings for optimizer
 lr = 1e-4  # or 1e-4
-batch_size = 64
-eval_batch_size = 64
+batch_size = 8
+eval_batch_size = 8
 epochs = args.epochs
 schedule_interval = 1
 early_stop = 5
@@ -122,19 +146,33 @@ nlayers = 12  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
 nhead = 8  # number of heads in nn.MultiheadAttention
 n_layers_cls = 3
 dropout = 0.2  # dropout probability
-use_fast_transformer = True  # whether to use fast transformer
+use_fast_transformer = False  # whether to use fast transformer
 
 # logging
 log_interval = 100
-device = "cuda"
+# Default to CPU here because this machine's RTX 5090 (sm_120) is not supported
+# by many PyTorch CUDA wheels yet, which triggers 'no kernel image' at runtime.
+# If/when you install a CUDA build that supports sm_120, you can force CUDA by
+# setting SCGPT_DEVICE=cuda.
+device = os.environ.get("SCGPT_DEVICE", "cpu")
 
 # dataset and evaluation choices
-pert_data_folder = Path("data/gears_pert_data/")
+pert_data_folder = Path(args.working_dir) / "data" / "gears_pert_data"
+pert_data_folder.mkdir(parents=True, exist_ok=True)
+
+_mark(f"pert_data_folder={pert_data_folder}")
+
 pert_data = PertData(pert_data_folder)
-if args.dataset_name in ['norman', 'adamson', 'dixit']:
+_mark("created PertData")
+
+if args.dataset_name in ["norman", "adamson", "dixit"]:
+  _mark(f"loading dataset by name: {args.dataset_name}")
   pert_data.load(args.dataset_name)
+  _mark("pert_data.load(name) done")
 else:
-  pert_data.load(data_path = "data/gears_pert_data/" + args.dataset_name)
+  _mark(f"loading dataset by path: {pert_data_folder / args.dataset_name}")
+  pert_data.load(data_path=str(pert_data_folder / args.dataset_name))
+  _mark("pert_data.load(path) done")
 
 
 conds = pert_data.adata.obs["condition"].cat.remove_unused_categories().cat.categories.tolist()
@@ -144,6 +182,8 @@ pert_data.adata = pert_data.adata[[c in good_conds for c in pert_data.adata.obs[
 
 with open(args.working_dir + "/results/" + args.test_train_config_id) as json_file:
   set2conditions = json.load(json_file)
+
+_mark("loaded split json")
 
 # Filter out problematic conditions
 set2conditions["train"] = [c for c in set2conditions["train"] if c in good_conds]
@@ -156,7 +196,11 @@ pert_data.split = "custom"
 pert_data.subgroup = None
 pert_data.seed = 1
 pert_data.train_gene_set_size = 0.75
+
+_mark("building dataloaders")
 pert_data.get_dataloader(batch_size = batch_size, test_batch_size = eval_batch_size)
+_mark("dataloaders ready")
+
 logger = scg.logger 
 
 
@@ -226,7 +270,10 @@ pretrained_dict = {
     if any([k.startswith(prefix) for prefix in load_param_prefixs])
 }
 model_dict.update(pretrained_dict)
-model.load_state_dict(model_dict)
+# Some pretrained checkpoints (e.g. HF scGPT-human) may contain fast-transformer
+# attention weights (Wqkv) that won't match the plain attention module.
+# Strict=False keeps compatible weights and ignores unexpected keys.
+model.load_state_dict(model_dict, strict=False)
 model.to(device)
 
 # Make scGPT compatible with GEARs Dataloader from version > 0.0.1
@@ -265,6 +312,9 @@ def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
 
     num_batches = len(train_loader)
     for batch, batch_data in enumerate(train_loader):
+        if args.max_train_steps and args.max_train_steps > 0 and batch >= args.max_train_steps:
+            print(f"[run_scgpt] Early stop: Reached max_train_steps={args.max_train_steps}")
+            return
         batch_size = len(batch_data.y)
         batch_data.to(device)
         x: torch.Tensor = batch_data.x  # (batch_size * n_genes, 2)
@@ -525,13 +575,30 @@ for epoch in range(0, epochs):
     scheduler.step()
 
 conds = pert_data.adata.obs["condition"].cat.remove_unused_categories().cat.categories.tolist()
+early_stopped = bool(args.max_train_steps and args.max_train_steps > 0)
+if early_stopped and args.predict_max_conds and args.predict_max_conds > 0:
+    non_ctrl = [c for c in conds if c != 'ctrl']
+    keep = ['ctrl'] if 'ctrl' in conds else []
+    keep += non_ctrl[: args.predict_max_conds]
+    conds = keep
 split_conds = [x.split("+") for x in conds]
 split_conds = [list(filter(lambda y: y != "ctrl", x)) for x in split_conds]
 
 tmp_out_dir = tempfile.mkdtemp()
 torch.save(best_model.state_dict(), f"{tmp_out_dir}/best_model.pt")
 
-all_pred_vals = predict(best_model, split_conds, pool_size=args.pool_size)
+if args.predict_progress_every and args.predict_progress_every > 0:
+    print(f"[run_scgpt] Predicting {len(split_conds)} conditions...")
+
+all_pred_vals = {}
+_t0 = time.time()
+for i, cond in enumerate(split_conds):
+    if args.predict_progress_every and args.predict_progress_every > 0 and (i % args.predict_progress_every == 0):
+        label = '+'.join(cond) if len(cond) else 'ctrl'
+        print(f"[run_scgpt] predict {i}/{len(split_conds)} elapsed={time.time() - _t0:.1f}s last={label}")
+    pred_dict = predict(best_model, [cond], pool_size=args.pool_size)
+    for k, v in pred_dict.items():
+        all_pred_vals[k] = v
 all_pred_vals = {k: v.tolist() for k, v in all_pred_vals.items()}
 with open(f"{tmp_out_dir}/all_predictions.json", 'w', encoding="utf8") as handle:
     json.dump(all_pred_vals, handle, indent = 4)

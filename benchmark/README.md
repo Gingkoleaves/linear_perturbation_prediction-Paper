@@ -60,22 +60,22 @@ conda activate gears_env2
 Now we will call `src/prepare_perturbation_data` to download the data and split all perturbations into a training test, and validation set:
 ```shell
 python3 src/prepare_perturbation_data.py \
-  --dataset_name adamson \
+  --dataset_name norman \
   --seed 1 \
-  --working_dir /tmp/working_dir \
-  --result_id seed_1_adamson_split
+  --working_dir . \
+  --result_id seed_1_norman_split
 ```
 
 In the next step we will use the output (`/tmp/working_dir/results/seed_1_adamson_split`) to run the linear model (`src/run_linear_pretrained_model.R`):
 ```shell
 Rscript --no-restore src/run_linear_pretrained_model.R \
-    --dataset_name adamson \
-    --test_train_config_id seed_1_adamson_split \
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
     --pca_dim 10 \
     --gene_embedding training_data \
     --pert_embedding training_data \
-    --working_dir /tmp/working_dir \
-    --result_id linear_results
+    --working_dir . \
+    --result_id linear_norman_results
 ```
 
 Similarly, we can now run scFoundation (`src/run_scfoundation.py`), GEARS (`src/run_gears.py`), or scGPT (`src/run_scgpt.py`). We can also calculate the ground truth by calling `src/ground_truth_combinatorial_prediction`. Remember to load the right conda environment each time before executing the script.
@@ -83,17 +83,30 @@ Similarly, we can now run scFoundation (`src/run_scfoundation.py`), GEARS (`src/
 ```shell
 conda activate gears_env2
 python3 src/run_ground_truth_for_combinatorial_perturbations.py \
-    --dataset_name adamson \
-    --test_train_config_id seed_1_adamson_split \
-    --working_dir /tmp/working_dir \
-    --result_id ground_truth_results
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
+    --working_dir . \
+    --result_id ground_truth_norman_results
 
 conda activate flashattn_env    
 python3 src/run_scgpt.py \
-    --dataset_name adamson \
-    --test_train_config_id seed_1_adamson_split \
-    --working_dir /tmp/working_dir \
-    --result_id scgpt_results    
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
+    --working_dir . \
+    --result_id scgpt_norman_results    
+
+python3 src/run_additive_model.py \
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
+    --working_dir . \
+    --result_id addi_norman_results   
+
+conda activate scfoundation_env
+python3 src/run_scfoundation.py \
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
+    --working_dir . \
+    --result_id scfoundation_norman_results 
 
 conda activate gears_env2
 python3 src/run_gears.py \
@@ -101,6 +114,13 @@ python3 src/run_gears.py \
     --test_train_config_id seed_1_adamson_split \
     --working_dir working_dir \
     --result_id gears_results
+
+conda activate cpa_env3
+python3 src/run_cpa.py \
+    --dataset_name norman \
+    --test_train_config_id seed_1_norman_split \
+    --working_dir . \
+    --result_id cpa_norman_results
 ```
 
 Each script produces a JSON file with the predictions of the gene expression for each perturbation and one JSON file listing the genes (as the order might differ). You can load the results with R and plot them:

@@ -61,7 +61,12 @@ pert_data.train_gene_set_size = 0.75
 pert_data.get_dataloader(batch_size = 32, test_batch_size = 128)
 
 
-gears_model = GEARS(pert_data, device = 'cuda')
+import torch
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Using device: {device}")
+
+gears_model = GEARS(pert_data, device = device)
 gears_model.model_initialize(hidden_size = 64)
 gears_model.train(epochs = args.epochs)
 

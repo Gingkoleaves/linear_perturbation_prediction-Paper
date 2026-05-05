@@ -8,3 +8,13 @@ benchmark/output/*
 
 # Ignore tikzDictionary
 *tikzDictionary
+
+# Datasets (local large files)
+benchmark/data/
+benchmark/models/
+scFoundation/GEARS/data/
+scFoundation/model/data/
+
+# Benchmark outputs
+benchmark/results/
+benchmark/logs/

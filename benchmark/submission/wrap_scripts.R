@@ -87,9 +87,39 @@ gears_combinatorial_prediction <- function(params, dep_jobs, duration = "10:00:0
                                  duration = duration, memory = memory)
 }
 
+gears_cfy_plugin_prediction <- function(params, base_job, dep_jobs = list(), duration = "06:00:00", memory = "40GB"){
+  cfy_params <- c(
+    params,
+    list(
+      base_result_id = base_job$result_id,
+      model_name = "gears"
+    )
+  )
+  MyWorkflowManager::wrap_script("src/run_gears_cfy_plugin.py", params = cfy_params,
+                                 dependencies = c(dep_jobs, list(base_job)), executor = "python",
+                                 extra_args = "gears_env2",
+                                 extra_slurm_arg = "-C gaming  -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
+
 scfoundation_combinatorial_prediction <- function(params, dep_jobs, duration = "5-00:00:00", memory = "80GB"){
   MyWorkflowManager::wrap_script("src/run_scfoundation.py", params = params, 
                                  dependencies = dep_jobs, executor = "python", 
+                                 extra_args = "scfoundation_env",
+                                 extra_slurm_arg = "--constraint=\"[gpu=A40|gpu=L40s|gpu=H100]\"  -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
+                                 duration = duration, memory = memory)
+}
+
+scfoundation_cfy_plugin_prediction <- function(params, base_job, dep_jobs = list(), duration = "06:00:00", memory = "40GB"){
+  cfy_params <- c(
+    params,
+    list(
+      base_result_id = base_job$result_id,
+      model_name = "scfoundation"
+    )
+  )
+  MyWorkflowManager::wrap_script("src/run_scfoundation_cfy_plugin.py", params = cfy_params,
+                                 dependencies = c(dep_jobs, list(base_job)), executor = "python",
                                  extra_args = "scfoundation_env",
                                  extra_slurm_arg = "--constraint=\"[gpu=A40|gpu=L40s|gpu=H100]\"  -p gpu-el8 --gpus 1 --ntasks-per-gpu 1",
                                  duration = duration, memory = memory)

@@ -49,14 +49,14 @@ if args.dataset_name == "norman_from_scfoundation":
   from gears import PertData, GEARS
 
   if not Path("data/gears_pert_data/" + args.dataset_name + "/perturb_processed.h5ad").exists():
-    download_link = "https://figshare.com/ndownloader/files/44477939"
-    urllib.request.urlretrieve(download_link, "data/norman_from_scfoundation_data.zip")
-    with zipfile.ZipFile("data/norman_from_scfoundation_data.zip","r") as zip_ref:
-      zip_ref.extractall("data/norman_from_scfoundation_data")
-    if not (pert_data_folder / "gene2go.pkl"):
-      shutil.copyfile("/g/huber/users/ahlmanne/projects/perturbation_prediction-benchmark/tmp/scfoundation/scfoundation_gears/data/gene2go.pkl", pert_data_folder / "gene2go.pkl")
+    # download_link = "https://figshare.com/ndownloader/files/44477939"
+    # urllib.request.urlretrieve(download_link, "data/norman_from_scfoundation_data.zip")
+    # with zipfile.ZipFile("data/norman_from_scfoundation_data.zip","r") as zip_ref:
+      # zip_ref.extractall("data/norman_from_scfoundation_data")
+    # if not (pert_data_folder / "gene2go.pkl"):
+      # shutil.copyfile("/g/huber/users/ahlmanne/projects/perturbation_prediction-benchmark/tmp/scfoundation/scfoundation_gears/data/gene2go.pkl", pert_data_folder / "gene2go.pkl")
     pert_data = PertData(pert_data_folder)
-    adata = sc.read_h5ad("data/norman_from_scfoundation_data/scFoundation/GEARS/data/gse133344_k562gi_oe_pert227_84986_19264_withtotalcount.h5ad")
+    adata = sc.read_h5ad("data/norman_from_scfoundation_data/gse133344_k562gi_oe_pert227_84986_19264_withtotalcount.h5ad")
     adata.uns['log1p'] = {}
     adata.uns['log1p']['base'] = None
     pert_data.new_data_process(dataset_name=args.dataset_name, adata=adata)
